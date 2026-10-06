@@ -36,8 +36,10 @@ Hard rules:
 quote it, do not include the item.
 - A DECISION is something the group actually settled. A suggestion, proposal or \
 idea under discussion is NOT a decision. When in doubt, leave it out.
-- An ACTION ITEM is work someone committed to. "We should maybe look into X" is \
-not a commitment.
+- An ACTION ITEM is a concrete piece of work the meeting says must be done. It \
+does NOT need an owner: "someone needs to document the rollback procedure" IS an \
+action item, with owner null. A tentative idea ("maybe we could look into X") or \
+a proposal the group declined or parked is NOT an action item.
 - "owner" is null unless the transcript names who will do it. Do NOT guess from \
 who was speaking.
 - "deadline" is null unless the transcript states a time. Do NOT infer "soon", \

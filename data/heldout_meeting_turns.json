@@ -1,0 +1,106 @@
+{
+  "voices": {
+    "Meera": "Karen",
+    "Tom": "Fred",
+    "Lena": "Moira",
+    "Dev": "Rishi"
+  },
+  "turns": [
+    {
+      "speaker": "Meera",
+      "start": 0.007,
+      "end": 5.282,
+      "text": "Morning everyone. Quick sync on the mobile release. Tom, how is the build looking?"
+    },
+    {
+      "speaker": "Tom",
+      "start": 5.832,
+      "end": 10.988,
+      "text": "The build is green. We fixed the crash on older Android devices yesterday."
+    },
+    {
+      "speaker": "Meera",
+      "start": 11.352,
+      "end": 11.776,
+      "text": "Great."
+    },
+    {
+      "speaker": "Lena",
+      "start": 12.336,
+      "end": 17.079,
+      "text": "The payment screen still feels slow. Users are waiting almost four seconds."
+    },
+    {
+      "speaker": "Dev",
+      "start": 17.642,
+      "end": 22.387,
+      "text": "That's the API call. We fetch the full order history before rendering anything."
+    },
+    {
+      "speaker": "Lena",
+      "start": 23.007,
+      "end": 24.294,
+      "text": "Can we load it lazily?"
+    },
+    {
+      "speaker": "Dev",
+      "start": 24.856,
+      "end": 28.853,
+      "text": "Yes. I can change it to load the history after the screen appears."
+    },
+    {
+      "speaker": "Meera",
+      "start": 29.454,
+      "end": 32.504,
+      "text": "Do that. Dev, can you have it ready by Thursday?"
+    },
+    {
+      "speaker": "Dev",
+      "start": 33.056,
+      "end": 33.993,
+      "text": "Thursday works."
+    },
+    {
+      "speaker": "Tom",
+      "start": 34.567,
+      "end": 38.643,
+      "text": "I'll also update the crash dashboard so we can watch the new version."
+    },
+    {
+      "speaker": "Meera",
+      "start": 39.017,
+      "end": 43.216,
+      "text": "Sounds good. Lena, could you run another usability test next week?"
+    },
+    {
+      "speaker": "Lena",
+      "start": 43.778,
+      "end": 46.28,
+      "text": "Sure, I'll book five participants."
+    },
+    {
+      "speaker": "Tom",
+      "start": 46.835,
+      "end": 49.674,
+      "text": "Should we also redesign the onboarding flow?"
+    },
+    {
+      "speaker": "Meera",
+      "start": 50.043,
+      "end": 52.596,
+      "text": "Not now. Let's keep this release small."
+    },
+    {
+      "speaker": "Lena",
+      "start": 53.143,
+      "end": 53.646,
+      "text": "Agreed."
+    },
+    {
+      "speaker": "Meera",
+      "start": 54.222,
+      "end": 56.126,
+      "text": "Okay, thanks everyone."
+    }
+  ]
+}

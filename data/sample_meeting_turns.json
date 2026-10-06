@@ -1,0 +1,99 @@
+{
+  "voices": {
+    "Priya": "Samantha",
+    "Arjun": "Daniel",
+    "Sam": "Tessa"
+  },
+  "turns": [
+    {
+      "speaker": "Priya",
+      "start": 0.003,
+      "end": 5.166,
+      "text": "Alright, let's start. Main thing today is the session store. Arjun, where are we?"
+    },
+    {
+      "speaker": "Arjun",
+      "start": 5.733,
+      "end": 14.966,
+      "text": "So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster, about two hundred milliseconds at the ninety fifth percentile."
+    },
+    {
+      "speaker": "Arjun",
+      "start": 15.523,
+      "end": 19.364,
+      "text": "It's only on three nodes, but it's enough to hurt the checkout flow."
+    },
+    {
+      "speaker": "Priya",
+      "start": 19.926,
+      "end": 22.494,
+      "text": "Is that a Redis problem or a networking problem?"
+    },
+    {
+      "speaker": "Arjun",
+      "start": 23.059,
+      "end": 29.981,
+      "text": "Mostly Redis. The connection pool thrashes under load. I think we should move the session store to PostgreSQL."
+    },
+    {
+      "speaker": "Sam",
+      "start": 30.544,
+      "end": 37.579,
+      "text": "PostgreSQL will be slower per read, but it's far more predictable, and we already run it in staging."
+    },
+    {
+      "speaker": "Priya",
+      "start": 38.148,
+      "end": 44.261,
+      "text": "Okay. Let's do it. We're moving the session store from Redis to PostgreSQL. That's decided."
+    },
+    {
+      "speaker": "Sam",
+      "start": 44.831,
+      "end": 52.965,
+      "text": "While we're at it, maybe we should switch the internal calls from REST API to gRPC. It might help the latency too."
+    },
+    {
+      "speaker": "Priya",
+      "start": 53.532,
+      "end": 59.592,
+      "text": "Let's park that one. Interesting, but not this sprint, and I don't want to change two things at once."
+    },
+    {
+      "speaker": "Arjun",
+      "start": 60.164,
+      "end": 65.689,
+      "text": "Agreed. I'll benchmark the PostgreSQL session store latency and have numbers by Friday."
+    },
+    {
+      "speaker": "Priya",
+      "start": 66.252,
+      "end": 71.638,
+      "text": "Good. Sam, can you update the Grafana dashboard so we can actually see the new metrics?"
+    },
+    {
+      "speaker": "Sam",
+      "start": 72.207,
+      "end": 74.764,
+      "text": "Yes, I'll take the Grafana dashboard."
+    },
+    {
+      "speaker": "Priya",
+      "start": 75.359,
+      "end": 79.398,
+      "text": "And someone needs to document the rollback procedure before we ship anything."
+    },
+    {
+      "speaker": "Arjun",
+      "start": 79.969,
+      "end": 85.641,
+      "text": "One more thing. We are not going to do the OAuth migration this sprint. It's blocked on the vendor."
+    },
+    {
+      "speaker": "Priya",
+      "start": 86.191,
+      "end": 88.719,
+      "text": "Understood. That's everything, thanks."
+    }
+  ]
+}

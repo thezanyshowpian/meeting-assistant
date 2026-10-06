@@ -1,0 +1,44 @@
+{
+  "title": "Mobile release sync (HELD-OUT fixture)",
+  "note": "Never used to choose any parameter. The diarization threshold is tuned on sample_meeting and only REPORTED here. Deliberately different from the tuning fixture: different voices, a different number of speakers (4 vs 3), and many very short turns ('Great.', 'Agreed.') which give the noisiest embeddings. If the threshold only works on the audio it was tuned on, this is where it shows.",
+  "voices": {
+    "Meera": ["Karen", "Moira", "Victoria"],
+    "Tom": ["Fred", "Rishi", "Alex"],
+    "Lena": ["Moira", "Fiona", "Veena"],
+    "Dev": ["Rishi", "Daniel", "Tom"]
+  },
+  "lines": [
+    {"speaker": "Meera", "text": "Morning everyone. Quick sync on the mobile release. Tom, how is the build looking?"},
+    {"speaker": "Tom", "text": "The build is green. We fixed the crash on older Android devices yesterday."},
+    {"speaker": "Meera", "text": "Great."},
+    {"speaker": "Lena", "text": "The payment screen still feels slow. Users are waiting almost four seconds."},
+    {"speaker": "Dev", "text": "That's the API call. We fetch the full order history before rendering anything."},
+    {"speaker": "Lena", "text": "Can we load it lazily?"},
+    {"speaker": "Dev", "text": "Yes. I can change it to load the history after the screen appears."},
+    {"speaker": "Meera", "text": "Do that. Dev, can you have it ready by Thursday?"},
+    {"speaker": "Dev", "text": "Thursday works."},
+    {"speaker": "Tom", "text": "I'll also update the crash dashboard so we can watch the new version."},
+    {"speaker": "Meera", "text": "Sounds good. Lena, could you run another usability test next week?"},
+    {"speaker": "Lena", "text": "Sure, I'll book five participants."},
+    {"speaker": "Tom", "text": "Should we also redesign the onboarding flow?"},
+    {"speaker": "Meera", "text": "Not now. Let's keep this release small."},
+    {"speaker": "Lena", "text": "Agreed."},
+    {"speaker": "Meera", "text": "Okay, thanks everyone."}
+  ],
+  "ground_truth": {
+    "note": "Owners here are recoverable ONLY with diarization plus evidence-based naming: each owner speaks a first-person commitment, and is addressed by name earlier in the meeting. Used by Phase 2.",
+    "action_items": [
+      {"task": "Change the payment screen to load order history lazily", "owner": "Dev", "deadline": "Thursday",
+       "naming_evidence": "'Dev, can you have it ready by Thursday?' -> next speaker answers 'Thursday works.'"},
+      {"task": "Update the crash dashboard", "owner": "Tom", "deadline": null,
+       "naming_evidence": "first-person 'I'll also update...'; Tom was addressed by name in turn 1 and the next speaker answered"},
+      {"task": "Run another usability test", "owner": "Lena", "deadline": "next week",
+       "naming_evidence": "'Lena, could you run another usability test next week?' -> next speaker: 'Sure, I'll book five participants.'"}
+    ],
+    "decisions": [
+      {"statement": "Load the payment screen order history lazily", "must_appear": true},
+      {"statement": "Redesign the onboarding flow", "must_appear": false,
+       "why": "TRAP: proposed by Tom, explicitly declined ('Not now')."}
+    ]
+  }
+}

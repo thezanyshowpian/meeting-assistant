@@ -69,6 +69,19 @@ def to_markdown(result) -> str:
     return "\n".join(lines)
 
 
+def _clock(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m}:{s:02d}"
+
+
 def transcripts_markdown(result) -> str:
-    return (f"# Raw Transcript\n\n{result.raw_text}\n\n"
-            f"# Refined Transcript\n\n{result.refined_text}\n")
+    out = (f"# Raw Transcript\n\n{result.raw_text}\n\n"
+           f"# Refined Transcript\n\n{result.refined_text}\n")
+    if getattr(result, "diarization", None):
+        d = result.diarization
+        out += (f"\n# Speaker-labelled Transcript\n\n"
+                f"_{d.num_speakers} speakers detected ({d.method}). Labels are "
+                f"anonymous; a label is never a guessed name._\n\n")
+        out += "\n\n".join(f"**{t.speaker}** [{_clock(t.start)}]: {t.text}"
+                           for t in d.turns) + "\n"
+    return out

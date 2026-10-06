@@ -106,6 +106,18 @@ def gate_anchor(edit: Edit, segment: Segment, _g: Glossary) -> str | None:
     return None
 
 
+def gate_noop(edit: Edit, _s: Segment, _g: Glossary) -> str | None:
+    """
+    Reject edits that change nothing but case or punctuation ('OAuth' -> 'OAuth',
+    'pool' -> 'pool'). Stage 2 corrects mis-heard terminology; cosmetic edits are
+    out of scope, and a stream of no-ops is noise in the audit trail.
+    """
+    if edit.edit_type is EditType.SUBSTITUTION and \
+            normalize(edit.original) == normalize(edit.replacement):
+        return "no-op: only case or punctuation would change — not a terminology correction"
+    return None
+
+
 def gate_type(edit: Edit, segment: Segment, _g: Glossary) -> str | None:
     """
     Typed policy. Insertions and deletions are denied as CATEGORIES.
@@ -233,7 +245,7 @@ def gate_confidence(edit: Edit, segment: Segment, _g: Glossary) -> str | None:
 
 
 GATES = (
-    gate_anchor, gate_type, gate_phonetic, gate_glossary,
+    gate_anchor, gate_noop, gate_type, gate_phonetic, gate_glossary,
     gate_span, gate_digits, gate_negation, gate_confidence,
 )
 
@@ -280,6 +292,15 @@ def apply_edits(segments: list[Segment], edits: list[Edit]) -> list[Segment]:
     Apply accepted edits. Everything not explicitly edited is byte-identical by
     construction — this is what makes drift impossible rather than merely
     discouraged.
+
+    An edit applies to EVERY occurrence of its phrase within its segment, on
+    WORD BOUNDARIES. Both properties were bugs, found when regenerated audio
+    changed how Whisper segmented the meeting:
+      - replacing only the first match left the second "red is" in
+        "...a red is problem? Mostly red is." uncorrected once both landed in
+        one segment;
+      - plain substring replacement would turn "colored island" into
+        "coloRedisland".
     """
     by_segment: dict[int, list[Edit]] = {}
     for edit in edits:
@@ -290,8 +311,8 @@ def apply_edits(segments: list[Segment], edits: list[Edit]) -> list[Segment]:
     for seg in segments:
         text = seg.text
         for edit in by_segment.get(seg.id, []):
-            if edit.original in text:
-                text = text.replace(edit.original, edit.replacement, 1)
+            pattern = re.compile(r"(?<!\w)" + re.escape(edit.original) + r"(?!\w)")
+            text = pattern.sub(lambda _m, r=edit.replacement: r, text)
         out.append(Segment(
             id=seg.id, start=seg.start, end=seg.end, text=text,
             avg_logprob=seg.avg_logprob, no_speech_prob=seg.no_speech_prob,

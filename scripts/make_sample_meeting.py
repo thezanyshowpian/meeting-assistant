@@ -5,20 +5,27 @@ Generate the sample meeting recording from the script, using macOS `say`.
 Why synthetic rather than a real recording:
   - it is freely shareable (a real meeting raises privacy problems);
   - it is reproducible — anyone can regenerate the exact same audio;
-  - and crucially we KNOW the ground truth, so WER and extraction accuracy become
-    measurable rather than impressionistic.
+  - we KNOW the ground truth, so WER, extraction accuracy and now diarization
+    error (DER) are measurable rather than impressionistic.
 
-Different `say` voices stand in for different speakers. Audio is written as
-16 kHz mono WAV and concatenated with the stdlib `wave` module, so this needs
-no ffmpeg and no third-party packages.
+Speakers MUST have acoustically distinct voices. The first version fell back to
+the system default voice for one speaker, which on many Macs is the same voice as
+another speaker — making them indistinguishable to any diarizer and the fixture
+useless for testing it. This version refuses to run with duplicate voices.
+
+Writes:
+  data/sample_meeting.wav             16 kHz mono WAV
+  data/sample_meeting_reference.txt   ground-truth transcript
+  data/sample_meeting_reference.rttm  ground-truth speaker turns (standard RTTM)
+  data/sample_meeting_turns.json      the same turns, with text, for evaluation
 
 USAGE
-    python scripts/make_sample_meeting.py
-    -> data/sample_meeting.wav
-    -> data/sample_meeting_reference.txt   (ground-truth transcript)
+    python scripts/make_sample_meeting.py                       # the sample meeting
+    python scripts/make_sample_meeting.py --name heldout_meeting  # the held-out one
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -26,13 +33,19 @@ import sys
 import tempfile
 import wave
 
+import numpy as np
+
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(HERE, "data", "sample_meeting_script.json")
-OUT_WAV = os.path.join(HERE, "data", "sample_meeting.wav")
-OUT_REF = os.path.join(HERE, "data", "sample_meeting_reference.txt")
+DATA = os.path.join(HERE, "data")
 
 RATE = 16_000
-GAP_SECONDS = 0.35          # pause between turns, so it sounds like a conversation
+GAP_SECONDS = 0.35            # pause between turns, so it sounds like a conversation
+SPEECH_THRESHOLD = 328        # ~1% of int16 full scale: what counts as "speaking"
+
+# Natural English voices, in preference order. Novelty voices (Bells, Bubbles…)
+# are deliberately absent.
+FALLBACK_VOICES = ["Samantha", "Daniel", "Karen", "Moira", "Tessa", "Rishi",
+                   "Fiona", "Alex", "Fred", "Victoria", "Veena", "Tom"]
 
 
 def available_voices() -> set[str]:
@@ -43,57 +56,108 @@ def available_voices() -> set[str]:
     return {line.split()[0] for line in out.splitlines() if line.strip()}
 
 
-def synth_line(text: str, voice: str | None, path: str) -> None:
-    cmd = ["say"]
-    if voice:
-        cmd += ["-v", voice]
-    cmd += ["-o", path, "--data-format=LEI16@16000", text]
-    subprocess.run(cmd, check=True)
+def assign_voices(preferences: dict, available: set[str]) -> dict[str, str]:
+    """One DISTINCT voice per speaker, or fail loudly."""
+    chosen: dict[str, str] = {}
+    for speaker, pref in preferences.items():
+        wanted = [pref] if isinstance(pref, str) else list(pref)
+        for voice in wanted + FALLBACK_VOICES:
+            if voice in available and voice not in chosen.values():
+                chosen[speaker] = voice
+                break
+        else:
+            raise SystemExit(
+                f"No distinct voice available for {speaker}. Need "
+                f"{len(preferences)} different voices; have {sorted(available)}.\n"
+                "Install more: System Settings > Accessibility > Spoken Content > "
+                "System Voice > Manage Voices."
+            )
+    return chosen
+
+
+def synth_line(text: str, voice: str, path: str) -> None:
+    subprocess.run(["say", "-v", voice, "-o", path,
+                    "--data-format=LEI16@16000", text], check=True)
+
+
+def speech_bounds(pcm: np.ndarray) -> tuple[int, int]:
+    """First and last sample that is actually speech (say pads each clip)."""
+    loud = np.flatnonzero(np.abs(pcm.astype(np.int32)) > SPEECH_THRESHOLD)
+    if loud.size == 0:
+        return 0, len(pcm)
+    return int(loud[0]), int(loud[-1]) + 1
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--name", default="sample_meeting",
+                    help="reads data/<name>_script.json, writes data/<name>.wav etc.")
+    args = ap.parse_args()
+
+    script = os.path.join(DATA, f"{args.name}_script.json")
+    out_wav = os.path.join(DATA, f"{args.name}.wav")
+    out_ref = os.path.join(DATA, f"{args.name}_reference.txt")
+    out_rttm = os.path.join(DATA, f"{args.name}_reference.rttm")
+    out_turns = os.path.join(DATA, f"{args.name}_turns.json")
+
     if sys.platform != "darwin":
         print("This script needs macOS `say`. Run it on the Mac.", file=sys.stderr)
         return 1
 
-    with open(SCRIPT) as fh:
+    with open(script) as fh:
         spec = json.load(fh)
 
-    voices = available_voices()
-    chosen: dict[str, str | None] = {}
-    for speaker, preferred in spec["voices"].items():
-        chosen[speaker] = preferred if preferred in voices else None
-        if chosen[speaker] is None:
-            print(f"  note: voice {preferred!r} unavailable for {speaker}; using default")
+    voices = assign_voices(spec["voices"], available_voices())
+    for speaker, voice in voices.items():
+        print(f"  {speaker:<8} -> {voice}")
 
-    frames: list[bytes] = []
-    gap = b"\x00\x00" * int(RATE * GAP_SECONDS)
+    chunks: list[np.ndarray] = []
+    turns: list[dict] = []
+    cursor = 0                                    # samples written so far
+    gap = np.zeros(int(RATE * GAP_SECONDS), dtype=np.int16)
 
     with tempfile.TemporaryDirectory() as tmp:
         for i, line in enumerate(spec["lines"]):
-            wav_path = os.path.join(tmp, f"line_{i:03d}.wav")
-            synth_line(line["text"], chosen.get(line["speaker"]), wav_path)
-            with wave.open(wav_path, "rb") as w:
-                assert w.getnchannels() == 1 and w.getsampwidth() == 2, "unexpected format"
-                frames.append(w.readframes(w.getnframes()))
-            frames.append(gap)
-            print(f"  [{i + 1:2d}/{len(spec['lines'])}] {line['speaker']}: "
-                  f"{line['text'][:60]}…")
+            path = os.path.join(tmp, f"line_{i:03d}.wav")
+            synth_line(line["text"], voices[line["speaker"]], path)
+            with wave.open(path, "rb") as w:
+                assert w.getnchannels() == 1 and w.getsampwidth() == 2
+                assert w.getframerate() == RATE, f"unexpected rate {w.getframerate()}"
+                pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
 
-    os.makedirs(os.path.dirname(OUT_WAV), exist_ok=True)
-    with wave.open(OUT_WAV, "wb") as out:
+            lo, hi = speech_bounds(pcm)
+            turns.append({
+                "speaker": line["speaker"],
+                "start": round((cursor + lo) / RATE, 3),
+                "end": round((cursor + hi) / RATE, 3),
+                "text": line["text"],
+            })
+            chunks += [pcm, gap]
+            cursor += len(pcm) + len(gap)
+            print(f"  [{i + 1:2d}/{len(spec['lines'])}] {turns[-1]['start']:6.2f}–"
+                  f"{turns[-1]['end']:6.2f}s  {line['speaker']}: {line['text'][:50]}…")
+
+    audio = np.concatenate(chunks)
+    with wave.open(out_wav, "wb") as out:
         out.setnchannels(1)
         out.setsampwidth(2)
         out.setframerate(RATE)
-        out.writeframes(b"".join(frames))
+        out.writeframes(audio.tobytes())
 
-    reference = " ".join(line["text"] for line in spec["lines"])
-    with open(OUT_REF, "w") as fh:
-        fh.write(reference + "\n")
+    with open(out_ref, "w") as fh:
+        fh.write(" ".join(t["text"] for t in turns) + "\n")
 
-    seconds = sum(len(f) for f in frames) / 2 / RATE
-    print(f"\nwrote {OUT_WAV}  ({seconds:.1f}s, {len(spec['lines'])} turns)")
-    print(f"wrote {OUT_REF}  ({len(reference.split())} words of ground truth)")
+    with open(out_rttm, "w") as fh:
+        for t in turns:
+            fh.write(f"SPEAKER {args.name} 1 {t['start']:.3f} "
+                     f"{t['end'] - t['start']:.3f} <NA> <NA> {t['speaker']} <NA> <NA>\n")
+
+    with open(out_turns, "w") as fh:
+        json.dump({"voices": voices, "turns": turns}, fh, indent=2)
+
+    print(f"\nwrote {out_wav}  ({len(audio) / RATE:.1f}s, {len(turns)} turns, "
+          f"{len(voices)} distinct voices)")
+    print(f"wrote {out_rttm}  (ground-truth speaker turns)")
     return 0
 
 

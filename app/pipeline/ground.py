@@ -112,7 +112,7 @@ def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
         if seg is None:
             result.dropped_decisions.append((
                 d.statement,
-                "no supporting quote found in the transcript"
+                f"no supporting quote found in the transcript: {d.evidence[:90]!r}"
                 if d.evidence else "no evidence quote was provided",
             ))
             continue
@@ -126,7 +126,7 @@ def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
         if seg is None:
             result.dropped_actions.append((
                 a.task,
-                "no supporting quote found in the transcript"
+                f"no supporting quote found in the transcript: {a.evidence[:90]!r}"
                 if a.evidence else "no evidence quote was provided",
             ))
             continue

@@ -29,6 +29,7 @@ __all__ = ["RefinementResult", "refine", "glossary_pass", "llm_pass",
 # can form. At 3 it could never see a 4-word mis-hearing like "g r p c" -> gRPC,
 # even though the gates would happily have accepted it.
 MAX_NGRAM = 5
+EDGE_PUNCT = ".,!?;:\"'()[] "
 
 
 @dataclass
@@ -109,15 +110,22 @@ def glossary_pass(segments: list[Segment], glossary: Glossary) -> list[Edit]:
     seen: set[tuple[int, str]] = set()
     for seg in segments:
         for phrase in _low_confidence_spans(seg):
-            term = glossary.best_match(phrase)
-            if not term or normalize(phrase) == normalize(term):
+            # Strip punctuation at the EDGES of the phrase. Otherwise
+            # 'g r p c.' -> 'gRPC' deletes the sentence's full stop, and the same
+            # phrase with different trailing punctuation ('red is,' vs 'red is.')
+            # becomes several edits, only one of which survived deduplication.
+            core = phrase.strip(EDGE_PUNCT)
+            if not core:
                 continue
-            key = (seg.id, normalize(phrase))
+            term = glossary.best_match(core)
+            if not term or normalize(core) == normalize(term):
+                continue
+            key = (seg.id, normalize(core))
             if key in seen:
                 continue
             seen.add(key)
             edits.append(Edit(
-                segment_id=seg.id, original=phrase, replacement=term,
+                segment_id=seg.id, original=core, replacement=term,
                 reason="phonetic match to glossary term (deterministic pass)",
                 confidence=1.0, source="glossary",
             ))

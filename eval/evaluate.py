@@ -35,6 +35,7 @@ from app.pipeline.glossary import Glossary  # noqa: E402
 from app.pipeline.orchestrator import run_pipeline  # noqa: E402
 from app.pipeline.refine import refine  # noqa: E402
 from app.schemas import Segment, Transcript, Word  # noqa: E402
+from eval.der import compute_der, load_rttm  # noqa: E402
 from eval.wer import compute_wer, normalize  # noqa: E402
 
 NUMBER_WORDS = {
@@ -245,6 +246,27 @@ def main() -> int:
         else:
             score.append(("  deadline correctly UNSPECIFIED", match.deadline is None,
                           f"INVENTED {match.deadline!r}" if match.deadline else ""))
+
+    # --------------------------------------------------- speaker diarization
+    rttm = os.path.join(HERE, "data", "sample_meeting_reference.rttm")
+    if result.diarization and os.path.exists(rttm):
+        print("\n" + "-" * 72)
+        print("SPEAKER DIARIZATION")
+        print("-" * 72)
+        ref_turns = load_rttm(rttm)
+        n_ref = len({s for _, _, s in ref_turns})
+        d = compute_der(ref_turns, result.diarization.hypothesis())
+        print(f"  {d}")
+        print(f"  speakers: found {result.diarization.num_speakers}, true {n_ref}  "
+              f"| {result.diarization.method}")
+        print(f"  label mapping: {d.mapping}")
+        for t in result.diarization.turns[:6]:
+            print(f"    {t.speaker:<10} [{t.start:5.1f}s] {t.text[:58]}")
+        score.append((f"diarization found the true number of speakers ({n_ref})",
+                      result.diarization.num_speakers == n_ref,
+                      f"found {result.diarization.num_speakers}"))
+    elif os.path.exists(rttm):
+        print("\n  (diarization not run — speechbrain not installed, or DIARIZE=off)")
 
     # ------------------------------------- Stage 2 under simulated ASR errors
     # The sample audio is synthetic, so Whisper hears the jargon perfectly and

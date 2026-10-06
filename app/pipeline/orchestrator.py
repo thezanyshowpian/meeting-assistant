@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 
 from ..errors import PipelineError
 from ..schemas import MeetingRecord, Transcript
+import os
+
+from .diarize import DiarizationResult, diarize, speechbrain_available
 from .glossary import Glossary, default_glossary
 from .ground import GroundingResult, ground
 from .refine import RefinementResult, refine
@@ -27,6 +30,7 @@ from .transcribe import Stage1Transcriber
 @dataclass
 class PipelineResult:
     transcript: Transcript | None = None
+    diarization: DiarizationResult | None = None
     refinement: RefinementResult | None = None
     record: MeetingRecord | None = None
     grounding: GroundingResult | None = None
@@ -57,6 +61,7 @@ class PipelineResult:
             "warnings": self.warnings,
             "stage_times": {k: round(v, 2) for k, v in self.stage_times.items()},
             "raw_transcript": self.transcript.to_dict() if self.transcript else None,
+            "diarization": self.diarization.to_dict() if self.diarization else None,
             "refinement": self.refinement.to_dict() if self.refinement else None,
             "meeting_record": self.record.to_dict() if self.record else None,
             "grounding": self.grounding.to_dict() if self.grounding else None,
@@ -66,6 +71,7 @@ class PipelineResult:
 def run_pipeline(audio_path: str, *, glossary: Glossary | None = None,
                  transcriber: Stage1Transcriber | None = None,
                  use_llm_refinement: bool = True,
+                 num_speakers: int | None = None,
                  progress=None) -> PipelineResult:
     """
     audio -> transcript -> refined transcript -> meeting record.
@@ -98,6 +104,28 @@ def run_pipeline(audio_path: str, *, glossary: Glossary | None = None,
             "No speech was detected, so no minutes could be produced."
         )
         return result
+
+    # ---- Stage 1.5 — speaker diarization (optional, degrades)
+    # DIARIZE=auto (default): run if speechbrain is installed; off: never; on:
+    # run, and complain loudly if it can't.
+    mode = os.environ.get("DIARIZE", "auto").lower()
+    if mode != "off":
+        if speechbrain_available():
+            say("diarize", "Identifying speakers…")
+            t0 = time.time()
+            try:
+                result.diarization = diarize(result.transcript, audio_path,
+                                             num_speakers=num_speakers)
+                result.warnings.extend(result.diarization.warnings)
+            except Exception as exc:                               # noqa: BLE001
+                result.warnings.append(
+                    f"Speaker diarization could not run ({exc}); continuing "
+                    "without speaker labels.")
+            result.stage_times["diarize"] = time.time() - t0
+        else:
+            result.warnings.append(
+                "Speaker diarization skipped: speechbrain is not installed "
+                "(pip install -r requirements-diarization.txt to enable).")
 
     # ---- Stage 2 — degrades on failure
     say("refine", "Correcting domain terminology…")

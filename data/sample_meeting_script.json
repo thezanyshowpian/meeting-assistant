@@ -2,9 +2,22 @@
   "title": "Platform sync \u2014 session store migration",
   "note": "Synthetic meeting with KNOWN ground truth, used as the shareable sample recording AND as the evaluation fixture. Every line is deliberately chosen to exercise something the rubric scores.",
   "voices": {
-    "Priya": "Samantha",
-    "Arjun": "Daniel",
-    "Sam": "Alex"
+    "Priya": [
+      "Samantha",
+      "Karen",
+      "Moira"
+    ],
+    "Arjun": [
+      "Daniel",
+      "Rishi",
+      "Fred"
+    ],
+    "Sam": [
+      "Tessa",
+      "Fiona",
+      "Alex",
+      "Moira"
+    ]
   },
   "lines": [
     {

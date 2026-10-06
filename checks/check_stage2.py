@@ -282,6 +282,48 @@ def main() -> int:
         assert out[0].words == segments[0].words, "word data lost"
         return "edited segment changed, all else identical"
 
+    @check("REGRESSION: every occurrence in a segment is corrected")
+    def _():
+        # Found when new voices made Whisper put both into ONE segment.
+        txt = "Is that a red is problem or a networking problem? Mostly red is. The pool"
+        s = seg(txt, sid=0, probs={"red": 0.3, "is": 0.3, "is.": 0.3})
+        from app.pipeline.refine import glossary_pass
+        edits = verify_edits(glossary_pass([s], g), {0: s}, g, total_words=200)
+        out = apply_edits([s], edits)[0].text
+        assert "red is" not in out, f"an occurrence survived: {out!r}"
+        assert out.count("Redis") == 2, f"expected 2 corrections: {out!r}"
+        assert out.rstrip().endswith("The pool") and "Redis." in out, \
+            f"punctuation damaged: {out!r}"
+        return out
+
+    @check("REGRESSION: corrections respect word boundaries")
+    def _():
+        s = seg("the colored island and red is here", sid=0,
+                probs={"red": 0.3, "is": 0.3})
+        e = edit("red is", "Redis")
+        e.accepted = True
+        out = apply_edits([s], [e])[0].text
+        assert "colored island" in out, f"substring inside a word was replaced: {out!r}"
+        assert "Redis here" in out, f"real occurrence not replaced: {out!r}"
+        return out
+
+    @check("REGRESSION: trailing punctuation is preserved")
+    def _():
+        from app.pipeline.refine import glossary_pass
+        s = seg("we call it g r p c.", sid=0,
+                probs={"g": 0.3, "r": 0.3, "p": 0.3, "c.": 0.3})
+        edits = verify_edits(glossary_pass([s], g), {0: s}, g, total_words=200)
+        out = apply_edits([s], edits)[0].text
+        assert out.endswith("gRPC."), f"full stop lost: {out!r}"
+        return out
+
+    @check("no-op edits (case/punctuation only) are rejected")
+    def _():
+        e = verify_edit(edit("OAuth", "OAuth"), seg("the OAuth flow"), g)
+        assert not e.accepted
+        assert any("no-op" in r for r in e.rejections), e.rejections
+        return "identity edit rejected"
+
     @check("rejected edits are never applied")
     def _():
         segments = [seg("we might ship friday", 0)]

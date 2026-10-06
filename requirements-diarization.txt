@@ -1,0 +1,13 @@
+# OPTIONAL — speaker diarization (Stage 1.5).
+#
+# The pipeline runs without these; diarization is skipped with a visible note.
+# Kept separate because torch is large, and the core application must stay
+# light enough for anyone to install.
+#
+#   pip install -r requirements-diarization.txt
+#
+# Model: speechbrain/spkrec-ecapa-voxceleb (ungated, ~80 MB, downloaded on first
+# use to ~/.cache/meeting-assistant/).
+speechbrain>=1.0
+torch>=2.1
+torchaudio>=2.1

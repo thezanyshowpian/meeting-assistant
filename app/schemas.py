@@ -27,6 +27,7 @@ class Word:
     start: float
     end: float
     probability: float
+    speaker: str | None = None      # set by diarization; anonymous label, never a guessed name
 
 
 @dataclass
