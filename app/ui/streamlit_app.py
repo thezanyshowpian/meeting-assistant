@@ -30,8 +30,9 @@ from app.schemas import UNSPECIFIED  # noqa: E402
 st.set_page_config(page_title="Meeting Assistant", page_icon="📝", layout="wide")
 
 st.title("AI Meeting Assistant")
-st.caption("Transcribe → correct domain terminology → generate minutes, "
-           "decisions and action items.")
+st.caption("Transcribe → identify speakers → correct domain terminology → "
+           "generate minutes, decisions and action items, each checked against "
+           "the transcript.")
 
 # ------------------------------------------------------------------ sidebar
 with st.sidebar:

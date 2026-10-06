@@ -297,9 +297,9 @@ app/
     └── orchestrator.py runs the stages in order, owns failure policy
 checks/                 behavioural test harnesses
 eval/                   WER, DER, ground-truth evaluation, trials, tuning
-scripts/                test-meeting generator
+scripts/                test-meeting generator, prompt export
 data/                   two test meetings, scripts, ground truth, sample outputs
-docs/                   technical description, design decisions, models, pipeline
+docs/                   technical description, design decisions, models, pipeline, prompts
 ```
 
 **Docs:**
@@ -307,5 +307,7 @@ docs/                   technical description, design decisions, models, pipelin
 - `docs/technical_description.md`: the required submission artifact.
 - `docs/DESIGN_DECISIONS.md`: every significant decision, alternative, and
   mistake, with measurements.
+- `docs/PROMPTS.md`: every prompt sent to a model, generated from the code by
+  `scripts/export_prompts.py`, so it can't drift.
 - `docs/MODELS.md`: model sourcing.
 - `docs/PIPELINE.md`: per-stage contracts.
