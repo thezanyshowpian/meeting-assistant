@@ -8,6 +8,8 @@ outputs exist and agree, and both export formats are produced.
 USAGE
     python checks/check_e2e.py --audio spikes/jfk.flac
     python checks/check_e2e.py --audio spikes/jfk.flac --no-llm   # skip the LLM pass
+    python checks/check_e2e.py --audio data/sample_meeting.wav --out data/sample_outputs
+                                       # also write the three output files
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.export import to_json, to_markdown  # noqa: E402
+from app.export import to_json, to_markdown, transcripts_markdown  # noqa: E402
 from app.pipeline.orchestrator import run_pipeline  # noqa: E402
 
 
@@ -26,6 +28,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--audio", required=True)
     ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--out", help="directory to write meeting_record.{json,md} "
+                                  "and transcripts.md")
     args = ap.parse_args()
 
     print("=" * 70)
@@ -108,6 +112,14 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+        for name, text in (("meeting_record.json", to_json(result)),
+                           ("meeting_record.md", to_markdown(result)),
+                           ("transcripts.md", transcripts_markdown(result))):
+            with open(os.path.join(args.out, name), "w") as fh:
+                fh.write(text)
+        print(f"  wrote 3 files to {args.out}")
     print("RESULT: end-to-end pipeline OK")
     print("=" * 70)
     return 0

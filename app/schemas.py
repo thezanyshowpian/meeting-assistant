@@ -106,10 +106,23 @@ class ActionItem:
     evidence: str = ""
     segment_id: int | None = None
     timestamp: float | None = None
+    # How the owner is known, set by Stage 4 / naming — never by the model:
+    #   "stated"   the name is spoken near the evidence ("Sam, can you…")
+    #   "speaker"  a voice committed in the first person; owner is its label
+    #   "inferred" that label was bound to a name by evidence-based naming
+    owner_source: str | None = None
+    owner_evidence: str = ""
+    owner_label: str | None = None   # the diarization label behind an inferred name
 
     @property
     def owner_display(self) -> str:
-        return self.owner or UNSPECIFIED
+        if not self.owner:
+            return UNSPECIFIED
+        if self.owner_source == "inferred":
+            return f"{self.owner} (inferred)"
+        if self.owner_source == "speaker":
+            return f"{self.owner} (voice only)"
+        return self.owner
 
     @property
     def deadline_display(self) -> str:

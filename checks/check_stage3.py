@@ -200,6 +200,76 @@ def main() -> int:
         assert res.total_removed == 0
         return "no crash, nothing invented"
 
+    print("\nSHORT QUOTES — 'Do that.' (found on the held-out meeting)")
+    held = [Segment(i, i * 5.0, i * 5.0 + 4, t, -0.2, 0.0, 1.0, []) for i, t in enumerate([
+        "The payment screen still feels slow.",
+        "That's the API call. We fetch the full order history before rendering anything.",
+        "Can we load it lazily?",
+        "Yes. I can change it to load the history after the screen appears.",
+        "Do that. Dev, can you have it ready by Thursday?",
+    ])]
+
+    @check("short quote + supporting context -> decision KEPT")
+    def _():
+        rec = MeetingRecord(decisions=[Decision(
+            statement="Implement lazy loading of order history on the payment screen",
+            evidence="Do that.")])
+        res = ground(rec, held)
+        assert len(res.record.decisions) == 1, res.dropped_decisions
+        assert res.record.decisions[0].segment_id == 4
+        return res.context_verified[0][:95]
+
+    @check("short quote, but the claim is NOT in the context -> DROPPED")
+    def _():
+        rec = MeetingRecord(decisions=[Decision(
+            statement="Migrate all services to MongoDB next quarter", evidence="Do that.")])
+        assert ground(rec, held).record.decisions == []
+        return "verbatim 'Do that.' alone does not support an unrelated claim"
+
+    @check("short quote that is not verbatim in the transcript -> DROPPED")
+    def _():
+        rec = MeetingRecord(decisions=[Decision(
+            statement="Implement lazy loading of order history", evidence="Ship it.")])
+        assert ground(rec, held).record.decisions == []
+        return "'Ship it.' was never said"
+
+    print("\nDUPLICATE ACTION ITEMS")
+
+    @check("request + acceptance listed twice (same owner) -> MERGED")
+    def _():
+        rec = MeetingRecord(action_items=[
+            ActionItem(task="Update the Grafana dashboard to show new metrics", owner="Sam",
+                       evidence="Sam can you update the Grafana dashboard"),
+            ActionItem(task="Take ownership of the Grafana dashboard", owner="Sam",
+                       deadline="Friday",
+                       evidence="Sam can you update the Grafana dashboard")])
+        res = ground(rec, segments)
+        acts = res.record.action_items
+        assert len(acts) == 1, [a.task for a in acts]
+        assert acts[0].task.startswith("Update") and acts[0].deadline == "Friday"
+        return res.merged[0][:95]
+
+    @check("same owner, different work -> NOT merged")
+    def _():
+        rec = MeetingRecord(action_items=[
+            ActionItem(task="Update the Grafana dashboard", owner="Sam",
+                       evidence="Sam can you update the Grafana dashboard"),
+            ActionItem(task="Benchmark the PostgreSQL session store latency", owner="Sam",
+                       evidence="benchmark the PostgreSQL session store latency")])
+        res = ground(rec, segments)
+        assert len(res.record.action_items) == 2 and not res.merged
+        return "2 kept"
+
+    @check("two UNOWNED overlapping tasks are never merged")
+    def _():
+        rec = MeetingRecord(action_items=[
+            ActionItem(task="Document the rollback procedure",
+                       evidence="someone needs to document the rollback procedure"),
+            ActionItem(task="Document the rollback procedure for staging",
+                       evidence="someone needs to document the rollback procedure")])
+        assert len(ground(rec, segments).record.action_items) == 2
+        return "no owner, no merge"
+
     @check("grounding never ADDS anything")
     def _():
         rec = MeetingRecord(

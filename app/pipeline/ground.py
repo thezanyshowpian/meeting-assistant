@@ -52,6 +52,8 @@ class GroundingResult:
     dropped_decisions: list[tuple[str, str]] = field(default_factory=list)
     dropped_actions: list[tuple[str, str]] = field(default_factory=list)
     downgraded: list[str] = field(default_factory=list)
+    context_verified: list[str] = field(default_factory=list)   # short quotes
+    merged: list[str] = field(default_factory=list)             # duplicate actions
 
     @property
     def total_removed(self) -> int:
@@ -63,6 +65,8 @@ class GroundingResult:
                                   for s, w in self.dropped_decisions],
             "dropped_actions": [{"task": s, "why": w} for s, w in self.dropped_actions],
             "downgraded_fields": self.downgraded,
+            "verified_by_context": self.context_verified,
+            "merged_duplicates": self.merged,
         }
 
 
@@ -88,6 +92,94 @@ def find_evidence(evidence: str, segments: list[Segment]) -> Segment | None:
     return best if best_score >= EVIDENCE_OVERLAP else None
 
 
+# ---- short quotes ------------------------------------------------------
+# "Do that." approves a proposal, and is the ONLY quote that captures the
+# decision — but it has no content words, so overlap lookup can't place it and
+# the item used to be dropped (found on the held-out meeting: a recall bug in
+# this stage, not in the model). A short quote is accepted only if
+#   (1) it appears VERBATIM in a segment — it pins the moment, and
+#   (2) the claim's own content words appear in that segment or the few before
+#       it — the context backs the content.
+CONTEXT_WINDOW = 3          # segments before the quote
+CONTEXT_OVERLAP = 0.5
+
+
+def _stem(word: str) -> str:
+    for suffix, repl in (("ily", "y"), ("ing", ""), ("ed", ""), ("ly", ""),
+                         ("es", ""), ("s", "")):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: len(word) - len(suffix)] + repl
+    return word
+
+
+def _stems(text: str) -> set[str]:
+    return {_stem(t) for t in _content(text)}
+
+
+def find_short_evidence(evidence: str, claim: str,
+                        segments: list[Segment]) -> tuple[Segment, float] | None:
+    quote = _tokens(evidence)
+    want = _stems(claim)
+    if not quote or len(_content(evidence)) >= MIN_EVIDENCE_WORDS or not want:
+        return None
+    n = len(quote)
+    best: tuple[Segment, float] | None = None
+    for idx, seg in enumerate(segments):
+        toks = _tokens(seg.text)
+        if not any(toks[i:i + n] == quote for i in range(len(toks) - n + 1)):
+            continue
+        window = " ".join(s.text for s in segments[max(0, idx - CONTEXT_WINDOW):idx + 1])
+        support = len(want & _stems(window)) / len(want)
+        if support >= CONTEXT_OVERLAP and (best is None or support > best[1]):
+            best = (seg, support)
+    return best
+
+
+def _locate(item_text: str, evidence: str, segments, result: "GroundingResult"):
+    seg = find_evidence(evidence, segments)
+    if seg is not None:
+        return seg
+    short = find_short_evidence(evidence, item_text, segments)
+    if short:
+        seg, support = short
+        result.context_verified.append(
+            f'"{item_text[:50]}": short quote {evidence!r} found verbatim at '
+            f"{_clock(seg.start)}; {support:.0%} of its content is in the preceding context")
+        return seg
+    return None
+
+
+# ---- duplicate action items --------------------------------------------
+# Models sometimes list a request AND its acceptance as two tasks ("Update the
+# Grafana dashboard" / "Take ownership of the Grafana dashboard", both Sam).
+MERGE_OVERLAP = 0.5
+
+
+def _merge_duplicates(actions: list[ActionItem], result: "GroundingResult") -> list[ActionItem]:
+    kept: list[ActionItem] = []
+    for a in actions:
+        twin = None
+        if a.owner:                     # never merge two UNOWNED tasks: too risky
+            for k in kept:
+                if (k.owner or "").lower() != a.owner.lower():
+                    continue
+                x, y = _stems(a.task), _stems(k.task)
+                shared = x & y
+                if len(shared) >= 2 and len(shared) / min(len(x), len(y)) >= MERGE_OVERLAP:
+                    twin = k
+                    break
+        if twin is None:
+            kept.append(a)
+            continue
+        keep, drop = (twin, a) if len(twin.task) >= len(a.task) else (a, twin)
+        keep.deadline = keep.deadline or drop.deadline
+        if keep is a:
+            kept[kept.index(twin)] = a
+        result.merged.append(f'"{drop.task}" merged into "{keep.task}" '
+                             f"(same owner {keep.owner}, same work)")
+    return kept
+
+
 def _mentioned(value: str | None, transcript: str) -> bool:
     """Is this owner/deadline actually spoken anywhere in the transcript?"""
     if not value:
@@ -99,7 +191,120 @@ def _mentioned(value: str | None, transcript: str) -> bool:
     return any(t in have for t in toks)
 
 
-def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
+_SPEAKER = re.compile(r"\s*(Speaker \d+)\b")
+# A voice owns a task only if it COMMITTED, i.e. spoke in the first person.
+# "Someone needs to document the rollback" said by Speaker 1 is not Speaker 1's task.
+_FIRST_PERSON = re.compile(r"\b(?:I|I'll|I'm|I've|I'd|me|my|mine)\b")
+NAME_WINDOW = 2   # a stated owner must be named in the evidence segment or the 2 before
+
+
+def _clock(seconds: float | None) -> str:
+    m, s = divmod(int(seconds or 0), 60)
+    return f"{m}:{s:02d}"
+
+
+def evidence_speaker(evidence: str, seg: Segment, utterances) -> str | None:
+    """Which voice spoke this quote? (best overlap among the segment's utterances)"""
+    u = evidence_utterance(evidence, seg, utterances)
+    return u.speaker if u else None
+
+
+def evidence_utterance(evidence: str, seg: Segment, utterances):
+    if not utterances:
+        return None
+    want = _content(evidence)
+    best, best_score = None, -1.0
+    for u in utterances:
+        if u.segment_id != seg.id:
+            continue
+        have = set(_content(u.text))
+        score = sum(1 for w in want if w in have) / max(len(want), 1)
+        if score > best_score:
+            best, best_score = u, score
+    return best
+
+
+def _named_near(name: str, segments: list[Segment], seg: Segment) -> bool:
+    """
+    Is this name spoken in the evidence segment or just before it?
+
+    The original check accepted a name spoken ANYWHERE in the meeting. That has a
+    hole: "Arjun, where are we?" at 0:04 makes "Arjun" appear in the transcript,
+    so a model that GUESSED Arjun owns a task at 0:50 passed. Proximity is what
+    links a name to a task ("Sam, can you update…" -> "Yes, I'll take it").
+    """
+    idx = next((i for i, s in enumerate(segments) if s.id == seg.id), None)
+    if idx is None:
+        return _mentioned(name, " ".join(s.text for s in segments))
+    window = " ".join(s.text for s in segments[max(0, idx - NAME_WINDOW):idx + 1])
+    toks = _content(name)
+    return bool(toks) and any(t in set(_tokens(window)) for t in toks)
+
+
+def _check_owner(a: ActionItem, seg: Segment, segments, utterances, naming,
+                 result: "GroundingResult") -> None:
+    if not a.owner:
+        return
+    utt = evidence_utterance(a.evidence, seg, utterances)
+    who = utt.speaker if utt else None
+    suspect = naming.is_suspect(utt) if naming else None
+    m = _SPEAKER.match(a.owner)
+    if m:
+        # A voice label. True only if THAT voice spoke the evidence.
+        a.owner = m.group(1)
+        if suspect:
+            # The voice is untrustworthy, but the REQUEST was addressed by name.
+            # If the flagged reply accepts a request about this same task, the
+            # owner is stated out loud: "Sam, can you update the dashboard?"
+            want = set(_content(a.task))
+            asked = set(_content(suspect.question))
+            if want and len(want & asked) / len(want) >= 0.5:
+                a.owner, a.owner_source = suspect.addressee, "stated"
+                a.owner_evidence = (
+                    f'asked by name at {_clock(suspect.asked_at)} ("{suspect.question[:80]}"); '
+                    f"the accepting reply's voice label was unreliable, so it was not used")
+                return
+            result.downgraded.append(
+                f'owner {a.owner!r} for "{a.task[:40]}" withheld — {suspect.describe()} '
+                f"— set to unspecified")
+            a.owner = None
+            return
+        if who == a.owner and not _FIRST_PERSON.search(a.evidence):
+            result.downgraded.append(
+                f'owner {a.owner!r} for "{a.task[:40]}" — {a.owner} said it, but '
+                f"not as a first-person commitment — set to unspecified")
+            a.owner = None
+            return
+        if who == a.owner:
+            a.owner_source = "speaker"
+            a.owner_evidence = f'{a.owner} said it at {_clock(seg.start)}: "{a.evidence[:80]}"'
+            return
+        result.downgraded.append(
+            f'owner {a.owner!r} for "{a.task[:40]}" — the evidence was spoken by '
+            f"{who or 'an unidentified voice'}, not {a.owner} — set to unspecified")
+        a.owner = None
+        return
+
+    if _named_near(a.owner, segments, seg):
+        a.owner_source = "stated"
+        a.owner_evidence = f"named in the conversation at {_clock(seg.start)}"
+        return
+    label = naming.label_for(a.owner) if naming else None
+    if label and who == label and not suspect:
+        # The model used a name, but only the naming evidence supports it.
+        a.owner_label, a.owner_source = label, "inferred"
+        a.owner_evidence = (f'{label} said it at {_clock(seg.start)}; '
+                            f"{naming.bindings[label].describe()}")
+        return
+    result.downgraded.append(
+        f'owner {a.owner!r} for "{a.task[:40]}" is not named near the evidence '
+        f"and no speaker evidence links them to it — set to unspecified")
+    a.owner = None
+
+
+def ground(record: MeetingRecord, segments: list[Segment], *, utterances=None,
+           naming=None) -> GroundingResult:
+    """`utterances`/`naming` (optional) enable speaker-label and inferred owners."""
     if record is None:
         return GroundingResult(record=MeetingRecord())
 
@@ -108,7 +313,7 @@ def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
 
     kept_decisions: list[Decision] = []
     for d in record.decisions:
-        seg = find_evidence(d.evidence, segments)
+        seg = _locate(d.statement, d.evidence, segments, result)
         if seg is None:
             result.dropped_decisions.append((
                 d.statement,
@@ -122,7 +327,7 @@ def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
 
     kept_actions: list[ActionItem] = []
     for a in record.action_items:
-        seg = find_evidence(a.evidence, segments)
+        seg = _locate(a.task, a.evidence, segments, result)
         if seg is None:
             result.dropped_actions.append((
                 a.task,
@@ -133,12 +338,7 @@ def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
         a.segment_id, a.timestamp = seg.id, seg.start
 
         # Evidence is sound, but the attribution may still be invented.
-        if not _mentioned(a.owner, transcript):
-            result.downgraded.append(
-                f'owner {a.owner!r} for "{a.task[:40]}" was never named in the '
-                f"recording — set to unspecified"
-            )
-            a.owner = None
+        _check_owner(a, seg, segments, utterances, naming, result)
         if not _mentioned(a.deadline, transcript):
             result.downgraded.append(
                 f'deadline {a.deadline!r} for "{a.task[:40]}" was never stated — '
@@ -146,7 +346,7 @@ def ground(record: MeetingRecord, segments: list[Segment]) -> GroundingResult:
             )
             a.deadline = None
         kept_actions.append(a)
-    record.action_items = kept_actions
+    record.action_items = _merge_duplicates(kept_actions, result)
 
     if result.total_removed:
         record.warnings.append(

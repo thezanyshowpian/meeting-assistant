@@ -1,5 +1,5 @@
 {
-  "title": "Platform sync \u2014 session store migration",
+  "title": "Platform sync — session store migration",
   "note": "Synthetic meeting with KNOWN ground truth, used as the shareable sample recording AND as the evaluation fixture. Every line is deliberately chosen to exercise something the rubric scores.",
   "voices": {
     "Priya": [
@@ -106,7 +106,8 @@
         "owner": null,
         "deadline": "Friday",
         "requires_diarization": true,
-        "why": "DOCUMENTED LIMITATION. Arjun says 'I'll benchmark...', so the owner is only recoverable if you know WHO IS SPEAKING. We do not do speaker diarization, so the transcript cannot support 'Arjun' and the correct behaviour is unspecified. Contrast 'Sam, can you update the Grafana dashboard', where the name is spoken aloud and IS recoverable. Owners are recoverable when NAMED, not when implied by the speaker."
+        "why": "Arjun says 'I'll benchmark...': the owner is recoverable only by knowing WHO IS SPEAKING. Without diarization the correct answer is unspecified. With diarization + evidence-based naming it is Arjun, FLAGGED inferred: Priya addresses 'Arjun, where are we?' and that voice answers; the same voice later says 'I'll benchmark'.",
+        "owner_with_diarization": "Arjun"
       },
       {
         "task": "Update the Grafana dashboard",
@@ -160,6 +161,16 @@
         "why": "A NEAR MISS on a real glossary term: 'stage inn' sounds close to 'staging' but does not match under Double Metaphone, and - verified - no sub-span of it matches any glossary term either. It must stay UNCORRECTED. This is what separates a discriminating gate from one that fuzzy-matches anything vaguely similar.",
         "previous_control_was_invalid": "'oh auth' for OAuth was correctly rejected as a whole phrase, but its sub-token 'auth' IS a legitimate phonetic match for OAuth, so the n-gram scan corrected that instead and the control could never pass. A valid control must have NO matching sub-span."
       }
+    },
+    "speaker_names": {
+      "expected": [
+        "Arjun",
+        "Sam"
+      ],
+      "anonymous": [
+        "Priya"
+      ],
+      "why": "Arjun and Sam are addressed by name and answer; nobody ever says Priya's name, so her voice must stay an anonymous label rather than be guessed."
     }
   }
 }

@@ -1,44 +1,89 @@
-# Pipeline — Per-Stage Specification
+# Pipeline — Per-Stage Contracts
 
-> One section per stage. Inputs/outputs and the fixed role are stated; the "how"
-> is TBD until decided. See `docs/DESIGN_DECISIONS.md` for rationale.
+Inputs, outputs and guarantees for each stage. Rationale is in
+`DESIGN_DECISIONS.md`; models in `MODELS.md`; the full narrative in
+`technical_description.md`. The orchestrator (`app/pipeline/orchestrator.py`)
+runs the stages in this order and owns the failure policy.
 
-## Stage 1 — Transcribe  [LOCKED]
-- **Input:** uploaded audio file path
-- **Output:** rich Transcript object — full text + segments `[{start,end,text,confidence}]` + word-level timestamps
-- **Model:** Whisper **large-v3-turbo**, self-hosted, via **faster-whisper** (CPU, portable). Verified on Apple M4/24 GB: load 2.6s, RTF ≈0.45.
-- **Config:** `language="en"`, `beam_size=5`, `vad_filter=True`, `word_timestamps=True`.
-- **Decoding:** PyAV-direct → ffmpeg subprocess → library internal (first that works). We pass the model a float32 numpy array @16 kHz; we do NOT use faster-whisper's internal decoder (broken on PyAV ≥19).
-- **Internal flow:**
-  1. **Validate (layered, fail-honest):**
-     - L1 exists + non-zero size → hard error on fail
-     - L2 ffmpeg decode probe → hard error on fail (corrupt/unreadable/unsupported); yields the decoded 16 kHz mono samples
-     - L3 post-decode sanity (duration floor, VAD energy) → **soft warning, proceed** if too short / near-silent
-  2. **Decode:** owned by us (from L2), not delegated to the library
-  3. **Clean:** VAD skips silence before the model
-  4. **Transcribe:** run Whisper per config
-  5. **Assemble:** build the rich Transcript object; flag (don't hide) low-confidence patches
-  6. **Post-check:** empty / near-empty transcript → "no speech detected", handled gracefully
-- **Does NOT do:** diarization (who-spoke), punctuation/casing fixes beyond Whisper's output, translation. (Diarization is a good "how I'd extend this" interview answer, not a build item.)
-- **Deferred:** long-recording chunking → edge-hardening step.
+| Stage | Module | On failure |
+| :-- | :-- | :-- |
+| 1 Transcribe | `transcribe.py`, `audio.py` | **fatal**: nothing downstream is meaningful |
+| 1.5 Diarize | `diarize.py` | degrade: no speaker labels, warning |
+| 2 Refine | `refine.py`, `verification.py`, `glossary.py` | degrade: raw transcript used, warning |
+| 1.6 Name | `naming.py` | degrade: labels stay anonymous, warning |
+| 3 Document | `summarize.py`, `llm.py` | Groq → local fallback; then degrade, warning |
+| 4 Verify | `ground.py`, `naming.attribute_owners` | degrade: unverified record, warning |
 
-## Stage 2 — Refine (domain-aware)
-- **Input:** rich Transcript (+ domain glossary). Can use per-segment confidence to target shaky patches.
-- **Output:** refined transcript
-- **Model:** _TBD_
-- **Must preserve:** names, numbers, negation, commitments, intended meaning
-- **Glossary mechanism:** _TBD_
-- **Prompt:** _see `docs/PROMPTS.md`_
+---
 
-## Stage 3 — Summarize
-- **Input:** refined transcript
-- **Output:** summary, minutes, key decisions, action items
-- **Model:** _TBD (distinct from Stage 2)_
-- **Rules:** proposal ≠ decision; unstated assignment ≠ task; owner/deadline only if stated
-- **Prompt:** _see `docs/PROMPTS.md`_
+## Stage 1 — Transcribe
+
+- **In:** audio file path.
+- **Out:** `Transcript`: text, segments, words (with timestamps and confidence),
+  warnings.
+- **Guarantees:**
+  - Missing, empty or undecodable files raise errors with user-facing messages.
+  - Short or silent audio produces warnings, never a refusal.
+  - No speech means an empty transcript plus a warning, not a crash.
+
+## Stage 1.5 — Diarize (optional: `DIARIZE=auto|on|off`)
+
+- **In:** transcript and audio. **Out:** `words[].speaker = "Speaker N"`, speaker
+  turns, the method used.
+- **Guarantees:**
+  - Every word gets a label.
+  - Labels are anonymous and numbered by first appearance.
+  - A known speaker count is honoured.
+
+## Stage 2 — Refine
+
+- **In:** transcript and glossary. **Out:** refined segments, plus every edit
+  (applied, rejected with reasons, or vetoed).
+- **Guarantees:**
+  - Text not explicitly edited is byte-identical.
+  - No change to digits or negation.
+  - No insertions.
+  - Only low-confidence spans may change.
+  - At most max(5, words ÷ 20) edits.
+
+## Stage 1.6 — Name (runs when diarization ran)
+
+- **In:** refined segments, accepted edits, glossary.
+- **Out:** `Utterance[]` (refined text per speaker per segment), and
+  `NamingResult`: bindings with evidence, conflicts, and suspected diarization
+  misses.
+- **Guarantees:**
+  - A name only comes with recorded evidence.
+  - A tie means no name.
+  - Nobody is named after someone they addressed.
+  - One name goes to at most one voice.
+
+## Stage 3 — Document
+
+- **In:** refined segments, or speaker-labelled utterances.
+- **Out:** `MeetingRecord`: summary, minutes, decisions, and action items, each
+  with an evidence quote.
+- **Guarantees:**
+  - Owner and deadline are `null` unless stated.
+  - A label owner is used only for a first-person commitment.
+  - The model is never asked to map labels to names.
 
 ## Stage 4 — Verify
-- **Input:** generated decisions/tasks + transcript (with timestamps for anchoring)
-- **Output:** verified record with unsupported claims removed/downgraded; each kept claim anchored to a transcript timestamp
-- **Approach:** _TBD_
-- **Prompt:** _see `docs/PROMPTS.md`_
+
+- **In:** the record, segments, utterances and naming.
+- **Out:** `GroundingResult`: a pruned, timestamped record, plus the dropped and
+  downgraded lists.
+- **Guarantees:**
+  - Unsupported items are dropped.
+  - Unsupported owners and deadlines become `unspecified`.
+  - Every owner carries `owner_source`: `stated`, `speaker` or `inferred`.
+  - Every owner carries `owner_evidence`: the quote, timestamp, and naming
+    evidence behind it.
+
+## Outputs
+
+`export.py` produces Markdown and JSON from the same `PipelineResult`.
+
+- They include the raw, refined and speaker-labelled transcripts.
+- They include the record, with owner provenance.
+- They include the inferred names with evidence, and every warning.

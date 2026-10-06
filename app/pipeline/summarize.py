@@ -40,22 +40,53 @@ idea under discussion is NOT a decision. When in doubt, leave it out.
 does NOT need an owner: "someone needs to document the rollback procedure" IS an \
 action item, with owner null. A tentative idea ("maybe we could look into X") or \
 a proposal the group declined or parked is NOT an action item.
-- "owner" is null unless the transcript names who will do it. Do NOT guess from \
-who was speaking.
+{owner_rules}
 - "deadline" is null unless the transcript states a time. Do NOT infer "soon", \
 "next week", or "by Friday" unless those words were said.
 - Empty lists are correct and expected answers when nothing qualifies.\
 """
 
 
+OWNER_RULES_PLAIN = """\
+- "owner" is null unless the transcript names who will do it. Do NOT guess from \
+who was speaking."""
+
+# Used only when diarization ran. The model sees ANONYMOUS labels and is told
+# never to map them to names: naming is done afterwards by auditable rules
+# (naming.py), not by the model's guess.
+OWNER_RULES_DIARIZED = """\
+- Each line starts with an anonymous speaker label such as "Speaker 2:". Labels \
+come from voice analysis. They are NOT names, and you must never guess which \
+person's name belongs to a label.
+- "owner": if the transcript names who will do it ("Sam, can you update the \
+dashboard?"), use that name. If a speaker commits to the work in the first \
+person ("I'll benchmark it", "I can change it", "Yes, I'll take it"), the owner \
+is that speaker's label exactly as written, e.g. "Speaker 2". Otherwise null.
+- For a first-person commitment, "evidence" must be quoted from that speaker's \
+own line."""
+
+
 def _render(segments: list[Segment]) -> str:
     return "\n".join(f"[{s.start:.0f}s] (segment {s.id}) {s.text}" for s in segments)
 
 
-def summarize(segments: list[Segment], *, client: LLMClient | None = None,
+def system_prompt(diarized: bool) -> str:
+    return SYSTEM_PROMPT.replace(
+        "{owner_rules}", OWNER_RULES_DIARIZED if diarized else OWNER_RULES_PLAIN)
+
+
+def summarize(segments: list[Segment], *, utterances=None,
+              client: LLMClient | None = None,
               model_label: str = "") -> MeetingRecord:
+    """`utterances` (from naming.speaker_utterances) switches on speaker labels."""
     started = time.time()
-    text = _render(segments)
+    diarized = bool(utterances) and any(u.speaker for u in utterances)
+    if diarized:
+        from .naming import render_utterances
+        text = render_utterances(utterances)
+    else:
+        text = _render(segments)
+    prompt = system_prompt(diarized)
     if not text.strip():
         return MeetingRecord(
             summary="", model=model_label or "n/a",
@@ -74,7 +105,7 @@ def summarize(segments: list[Segment], *, client: LLMClient | None = None,
     warnings: list[str] = []
     data = None
     try:
-        data = client.chat_json(SYSTEM_PROMPT, user)
+        data = client.chat_json(prompt, user)
     except LLMError as exc:
         # Fall back to local rather than returning nothing. A remote failure
         # (outage, rate limit, deprecated model id) must not cost the user their
@@ -86,7 +117,7 @@ def summarize(segments: list[Segment], *, client: LLMClient | None = None,
             )
             client, model_label = local_stage3_client()
             try:
-                data = client.chat_json(SYSTEM_PROMPT, user)
+                data = client.chat_json(prompt, user)
             except LLMError as local_exc:
                 return MeetingRecord(
                     model=model_label,

@@ -98,7 +98,8 @@ if result:
         for col, (stage, seconds) in zip(cols, result.stage_times.items()):
             col.metric(stage, f"{seconds:.1f}s")
 
-    tabs = st.tabs(["Transcripts", "Meeting record", "Corrections", "Downloads"])
+    tabs = st.tabs(["Transcripts", "Meeting record", "Speakers", "Corrections",
+                    "Downloads"])
 
     # -- transcripts, side by side so Stage 2's effect is visible
     with tabs[0]:
@@ -143,17 +144,46 @@ if result:
             if record.action_items:
                 st.table([
                     {"Task": a.task,
-                     "Owner": a.owner or UNSPECIFIED,
-                     "Deadline": a.deadline or UNSPECIFIED}
+                     "Owner": a.owner_display,
+                     "Deadline": a.deadline or UNSPECIFIED,
+                     "How the owner is known": a.owner_evidence or "—"}
                     for a in record.action_items
                 ])
                 st.caption(f'"{UNSPECIFIED}" means the recording did not state it. '
-                           "We never guess an owner or a deadline.")
+                           "We never guess an owner or a deadline. *(voice only)*: "
+                           "that voice committed in the first person; *(inferred)*: "
+                           "that voice was also linked to a name by evidence in the "
+                           "conversation (see the Speakers tab).")
             else:
                 st.caption("No action items were assigned.")
 
-    # -- corrections, including the rejected ones
+    # -- who spoke, and which names the conversation actually supports
     with tabs[2]:
+        if not result.diarization:
+            st.info("Speaker diarization did not run (install "
+                    "requirements-diarization.txt, or check DIARIZE).")
+        else:
+            d, naming = result.diarization, result.naming
+            st.caption(f"{d.num_speakers} speakers — {d.method}")
+            st.subheader("Names inferred from the conversation")
+            if naming and naming.bindings:
+                st.table([{"Speaker": b.speaker, "Name (inferred)": b.name,
+                           "Evidence": "; ".join(e.describe() for e in b.evidence)}
+                          for b in naming.bindings.values()])
+            unnamed = [f"Speaker {i}" for i in range(1, d.num_speakers + 1)
+                       if not (naming and naming.name_for(f"Speaker {i}"))]
+            if unnamed:
+                st.caption(f"No evidence for a name: {', '.join(unnamed)} — left "
+                           "anonymous rather than guessed.")
+            for c in (naming.conflicts if naming else []):
+                st.caption(f"Not named: {c}")
+            st.subheader("Speaker-labelled transcript")
+            show = naming.display if naming else (lambda x: x)
+            for u in (result.utterances or []):
+                st.markdown(f"**{show(u.speaker)}** `[{u.start:.0f}s]` {u.text}")
+
+    # -- corrections, including the rejected ones
+    with tabs[3]:
         ref = result.refinement
         if not ref:
             st.info("Refinement did not run.")
@@ -177,7 +207,7 @@ if result:
                 st.caption("Nothing was rejected.")
 
     # -- downloads: same object, two formats, so they cannot disagree
-    with tabs[3]:
+    with tabs[4]:
         st.download_button("Meeting record (JSON — machine-readable)",
                            to_json(result), "meeting_record.json", "application/json")
         st.download_button("Meeting record (Markdown — human-readable)",

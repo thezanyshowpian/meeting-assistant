@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 
 import re  # noqa: E402
 
-from app.pipeline.glossary import Glossary  # noqa: E402
+from app.pipeline.glossary import Glossary, default_glossary  # noqa: E402
 from app.pipeline.orchestrator import run_pipeline  # noqa: E402
 from app.pipeline.refine import refine  # noqa: E402
 from app.schemas import Segment, Transcript, Word  # noqa: E402
@@ -97,31 +97,67 @@ SCRIPT = os.path.join(HERE, "data", "sample_meeting_script.json")
 AUDIO = os.path.join(HERE, "data", "sample_meeting.wav")
 
 
+def _stem(word: str) -> str:
+    """
+    Crude suffix stripping, so 'lazily'~'lazy' and 'loading'~'load'. Added after
+    the held-out run where the model reported "Implement lazy loading of order
+    history…" and exact-word matching scored the decision as MISSING (3/6 words).
+    Applied identically to every check; it makes matching fairer, not looser on
+    meaning (negation is handled separately by declines()).
+    """
+    for suffix, repl in (("ily", "y"), ("ing", ""), ("ed", ""), ("ly", ""), ("es", ""), ("s", "")):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: len(word) - len(suffix)] + repl
+    return word
+
+
 def contains_idea(text: str, phrase: str, threshold: float = 0.6) -> bool:
     """Loose containment: do most of the key words of `phrase` appear in `text`?"""
-    want = [w for w in normalize(phrase) if len(w) > 3]
+    want = [_stem(w) for w in normalize(phrase) if len(w) > 3]
     if not want:
         return False
-    have = set(normalize(text))
+    have = {_stem(w) for w in normalize(text)}
     return sum(1 for w in want if w in have) / len(want) >= threshold
+
+
+_DECLINES = re.compile(r"\b(?:not|no|don't|do not|won't|will not|defer\w*|postpone\w*|"
+                       r"park\w*|declin\w*|reject\w*|later|skip\w*|hold off)\b", re.I)
+
+
+def declines(statement: str) -> bool:
+    """
+    Does a reported decision state that something will NOT be done?
+
+    A proposal the group declined may legitimately come back as the decision
+    "do not redesign onboarding" — that is correct, not the trap. Keyword
+    overlap alone can't tell "redesign onboarding" from "do NOT redesign
+    onboarding"; this was a scorer bug found on the held-out meeting.
+    """
+    return bool(_DECLINES.search(statement))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-llm", action="store_true")
-    ap.add_argument("--audio", default=AUDIO)
+    ap.add_argument("--audio", default=None)
+    ap.add_argument("--fixture", choices=["sample", "heldout"], default="sample",
+                    help="heldout: the 4-speaker meeting never used for tuning")
     args = ap.parse_args()
+    script = SCRIPT if args.fixture == "sample" else SCRIPT.replace("sample_", "heldout_")
+    args.audio = args.audio or script.replace("_script.json", ".wav")
+    rttm = script.replace("_script.json", "_reference.rttm")
 
     if not os.path.exists(args.audio):
         print(f"missing {args.audio}\nRun: python scripts/make_sample_meeting.py")
         return 1
 
-    with open(SCRIPT) as fh:
+    with open(script) as fh:
         spec = json.load(fh)
     truth = spec["ground_truth"]
     reference = " ".join(line["text"] for line in spec["lines"])
 
-    glossary = Glossary(truth["domain_terms"])
+    glossary = Glossary(truth["domain_terms"]) if "domain_terms" in truth \
+        else default_glossary()
     print("=" * 72)
     print("EVALUATION — sample meeting with known ground truth")
     print("=" * 72)
@@ -145,6 +181,21 @@ def main() -> int:
 
     if result.record:
         print(f"\n  stage 3 model: {result.record.model}")
+    # What Stage 4 removed or downgraded — a count alone can't distinguish a
+    # caught fabrication from a valid item lost to over-strict matching.
+    g = result.grounding
+    if g and (g.total_removed or g.downgraded or g.context_verified or g.merged):
+        print("\n  STAGE 4 ACTIONS")
+        for st, why in g.dropped_decisions:
+            print(f"    - dropped decision: {st!r} ({why})")
+        for st, why in g.dropped_actions:
+            print(f"    - dropped action:   {st!r} ({why})")
+        for note in g.downgraded:
+            print(f"    ~ {note}")
+        for note in g.context_verified:
+            print(f"    + short quote kept: {note}")
+        for note in g.merged:
+            print(f"    = merged: {note}")
 
     score: list[tuple[str, bool, str]] = []
 
@@ -179,9 +230,10 @@ def main() -> int:
     # numbers ("two hundred milliseconds" -> "200 milliseconds"); that is ASR
     # behaviour, not refinement damage. The invariant we actually care about is
     # that STAGE 2 changed nothing numeric.
-    neg = truth["must_preserve"]["negation"]
-    score.append(("negation preserved through refinement",
-                  contains_idea(result.refined_text, neg, 0.7), neg[:50]))
+    if "must_preserve" in truth:
+        neg = truth["must_preserve"]["negation"]
+        score.append(("negation preserved through refinement",
+                      contains_idea(result.refined_text, neg, 0.7), neg[:50]))
 
     raw_nums, ref_nums = numeric_content(result.raw_text), numeric_content(result.refined_text)
     score.append(("Stage 2 altered no numbers (refined vs raw)",
@@ -204,7 +256,13 @@ def main() -> int:
             # Recorded for the record but deliberately not scored — e.g. a valid
             # decision discovered after the fixture was written.
             continue
-        present = any(contains_idea(f, expected["statement"]) for f in found)
+        hits = [f for f in found if contains_idea(f, expected["statement"])]
+        present = bool(hits)
+        if not expected["must_appear"]:
+            if any(declines(f) for f in hits):
+                print(f"  note: declined proposal reported AS declined (correct): "
+                      f"{[f for f in hits if declines(f)]}")
+            present = any(not declines(f) for f in hits)
         if expected["must_appear"]:
             score.append((f"decision FOUND: {expected['statement'][:45]}", present, ""))
         else:
@@ -218,8 +276,10 @@ def main() -> int:
     print("-" * 72)
     actions = record.action_items if record else []
     for a in actions:
-        print(f"  {a.task[:52]:<52} owner={a.owner_display:<12} "
+        print(f"  {a.task[:52]:<52} owner={a.owner_display:<18} "
               f"deadline={a.deadline_display}")
+        if a.owner_evidence and a.owner_source != "stated":
+            print(f"      owner evidence: {a.owner_evidence[:150]}")
     if not actions:
         print("  (none reported)")
 
@@ -229,7 +289,11 @@ def main() -> int:
         score.append((f"action found: {label}", match is not None, ""))
         if not match:
             continue
-        # owner
+        # owner — a first-person commitment is attributable only with diarization
+        expected = dict(expected)
+        if result.diarization and expected.get("owner_with_diarization"):
+            expected["owner"] = expected["owner_with_diarization"]
+            expected["requires_diarization"] = False
         if expected["owner"]:
             ok = bool(match.owner) and expected["owner"].lower() in match.owner.lower()
             score.append((f"  owner = {expected['owner']}", ok, f"got {match.owner!r}"))
@@ -248,7 +312,6 @@ def main() -> int:
                           f"INVENTED {match.deadline!r}" if match.deadline else ""))
 
     # --------------------------------------------------- speaker diarization
-    rttm = os.path.join(HERE, "data", "sample_meeting_reference.rttm")
     if result.diarization and os.path.exists(rttm):
         print("\n" + "-" * 72)
         print("SPEAKER DIARIZATION")
@@ -265,6 +328,34 @@ def main() -> int:
         score.append((f"diarization found the true number of speakers ({n_ref})",
                       result.diarization.num_speakers == n_ref,
                       f"found {result.diarization.num_speakers}"))
+
+        # ---- naming: right name on the right voice, and NO name without evidence
+        names = truth.get("speaker_names")
+        if names and result.naming:
+            print("\n  names inferred:")
+            for b in result.naming.bindings.values():
+                print(f"    {b.speaker} -> {b.name}  (true voice: "
+                      f"{d.mapping.get(b.speaker, '?')})  {b.evidence[0].describe()[:90]}")
+            for c in result.naming.conflicts:
+                print(f"    not named: {c}")
+            for person in names["expected"]:
+                label = result.naming.label_for(person)
+                ok = label is not None and d.mapping.get(label) == person
+                score.append((f"name '{person}' bound to {person}'s voice", ok,
+                              f"bound to {label} = {d.mapping.get(label)}" if label
+                              else "not named"))
+            wrong = [f"{b.speaker}->{b.name} (is {d.mapping.get(b.speaker)})"
+                     for b in result.naming.bindings.values()
+                     if d.mapping.get(b.speaker) != b.name]
+            score.append(("no voice was given a WRONG name (precision)", not wrong,
+                          ", ".join(wrong)))
+            for m in result.naming.suspects:
+                print(f"    cross-check: {m.describe()}")
+            for person in names["anonymous"]:
+                label = next((h for h, r in d.mapping.items() if r == person), None)
+                given = result.naming.name_for(label) if label else None
+                score.append((f"{person} (never addressed) left ANONYMOUS", given is None,
+                              f"named {given!r}!" if given else ""))
     elif os.path.exists(rttm):
         print("\n  (diarization not run — speechbrain not installed, or DIARIZE=off)")
 

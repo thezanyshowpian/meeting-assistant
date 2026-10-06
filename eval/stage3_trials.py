@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 from app.pipeline.ground import ground  # noqa: E402
 from app.pipeline.summarize import summarize  # noqa: E402
 from app.pipeline.transcribe import Stage1Transcriber  # noqa: E402
-from eval.evaluate import AUDIO, SCRIPT, contains_idea  # noqa: E402
+from eval.evaluate import AUDIO, SCRIPT, contains_idea, declines  # noqa: E402
 
 
 def score(record, truth) -> dict[str, bool]:
@@ -44,6 +44,9 @@ def score(record, truth) -> dict[str, bool]:
         if d["must_appear"]:
             checks[f"decision found: {d['statement'][:34]}"] = present
         else:
+            # Reported AS declined ("do not redesign…") is correct, not the trap.
+            present = any(contains_idea(f, d["statement"]) and not declines(f)
+                          for f in found)
             checks[f"proposal NOT a decision: {d['statement'][:26]}"] = not present
             # A declined proposal must not sneak back in as an action item
             # either - the risk of loosening the action-item definition.
@@ -103,6 +106,8 @@ def run_trials(backend: str, n: int, segments, truth) -> tuple[dict, list]:
             print(f"      - dropped action:   {task!r} ({why})")
         for note in result.downgraded:
             print(f"      ~ {note}")
+        for note in result.context_verified + result.merged:
+            print(f"      + {note}")
     return tally, runs
 
 

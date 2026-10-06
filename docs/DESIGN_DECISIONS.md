@@ -1,8 +1,8 @@
 # Design Decisions (running log)
 
 > One entry per significant decision, newest first. Captures *why*, not just
-> *what* — this is interview ammunition and keeps agents from re-litigating
-> settled choices.
+> *what* — including the mistakes, and how each was found. Entries are not
+> rewritten after the fact; later findings are added as corrections.
 
 <!--
 Template for each entry:
@@ -13,6 +13,73 @@ Template for each entry:
 - **Rationale:** why this, tied to constraints / rubric
 - **Status:** proposed / accepted / superseded
 -->
+
+## [2026-10-06] Phase 2 — evidence-based speaker naming, voice-aware grounding, a cross-check
+
+### What was built
+- **Stage 1.6 naming (`naming.py`)** — rules, not the LLM. A model asked "who is Speaker 2?" will answer, and a guess looks identical to a supported answer. Evidence: *addressed-then-answered* (weight 1: a request that ENDS a turn, answered next by a different voice), *self-introduction* (weight 2), *self-address exclusion* (veto). Ties -> unnamed; one name claimed by two voices -> stronger evidence, or neither on a tie.
+- **Alternatives considered:** LLM-assisted naming (more recall on indirect cues, but unauditable and non-deterministic — rejected for the attribution step, which is exactly where invention matters); acoustic speaker ID against enrolled voices (needs enrollment — not available for an arbitrary meeting).
+- **Stage 3 sees anonymous labels only.** First-person commitment -> owner = the speaker label; the prompt forbids mapping labels to names. Naming is applied after grounding, deterministically.
+- **Owner provenance in the schema:** `owner_source` = stated | speaker | inferred, plus `owner_evidence`. Displayed as `Sam`, `Speaker 3 (voice only)`, `Arjun (inferred)`.
+- **Speaker-split refined text:** diarization labels raw words, refinement edits segment text; for multi-speaker segments each piece is rebuilt from raw words and that segment's accepted edits re-applied.
+
+### Stage 4 holes found while designing this (both closed, regression-tested)
+1. **Proximity.** The owner check accepted a name spoken *anywhere* in the meeting. "Arjun, where are we?" at 0:04 made a GUESSED "Arjun" pass for a task at 0:50. Now a stated owner must be named in the evidence segment or the 2 before; otherwise only the naming evidence can support it.
+2. **First person.** "Someone needs to document the rollback", spoken by Speaker 1, would have made Speaker 1 the owner — the voice check verified who SPOKE, not who COMMITTED. A label owner now requires a first-person marker in the evidence.
+
+### Real-audio results, and what they exposed
+- **Naming:** 4 of 4 names that were bound went to the right voice (Arjun; Tom, Dev, Lena on held-out); **0 wrong names**; both never-addressed speakers (Priya, Meera) stayed anonymous. First-person owners recovered: "I'll benchmark" -> Arjun (inferred), and Tom/Dev/Lena on held-out.
+- **Sam was missed, and that produced a WRONG owner.** The sample's 2.0 s of DER *confusion* is exactly Sam's "Yes, I'll take the Grafana dashboard" — clustered with Priya (two similar synthetic female voices). Naming correctly refused (Priya appeared to answer her own question). But Stage 3 listed the acceptance as a separate item, owner "Speaker 1 (voice only)" — Priya — and Stage 4 trusted the voice label.
+- **Correction to the diarization entry below:** it says the residual error "is missed speech at turn boundaries, not mis-attribution". True on held-out (zero confusion); **false on the sample**, where 2.0 s is mis-attribution.
+- **Fix (decided together): language cross-checks the voices.** A request addressed by name to someone else, followed directly by a reply opener ("Yes", "Sure", …) with the SAME voice label, marks that reply as a likely missed speaker change: a warning is raised and no voice-based owner or name is built on it. We do not try to repair the label. Rejected alternatives: merging request+acceptance in the prompt (treats the symptom, measured on one meeting); documenting only (leaves a wrong owner in our own sample output).
+
+### Second real run: the cross-check worked, and cost a correct owner (fixed)
+- The flag fired exactly where expected (1:06 question, 1:12 reply), with 0 false alarms on held-out. But this time Stage 3 gave the merged Grafana task the owner "Speaker 1", and withholding it left `unspecified`, although Priya said "Sam, can you update the Grafana dashboard?" aloud. The run without speaker labels had returned Sam: a regression introduced by speaker labels.
+- **Fix (decided together): fall back to the addressee.** If a flagged reply accepts a request about the same task (at least 50% of the task's content words appear in the request), the owner is the person the request named, tagged `stated`, citing the request. If the request was about a different task, the owner is still withheld (tested). Rejected: a prompt rule to "prefer names over labels", which is model-dependent and measured on one meeting.
+- **Scorer false negative (fixed):** held-out reported "Implement lazy loading of order history…", but exact-word matching scored the decision as missing ('lazy'≠'lazily', 'loading'≠'load', 3/6 words matched). Matching now strips common suffixes (-ily→-y, -ing, -ed, -ly, -es, -s) identically for every check. So the "Do that." decision was found in 1 of 2 held-out runs: Stage 3 variance, not a constant miss.
+
+### Third real run: the drop list solved the open mystery
+- The new drop printing showed Stage 4 **dropping** the held-out decision "Implement lazy loading of order history…" because its quote was **"Do that."** (0 content words; the lookup needs 3). Run 1's unexplained "1 item removed" was very likely the same item. And the earlier "Do that. not reported" was not a model miss at all: **our verifier deleted a correct answer.** Making a drop visible is what turned an unexplained count into a fix.
+- **Fix (decided together): quote + context.** A quote with fewer than 3 content words is accepted only if it appears verbatim in a segment AND ≥50% of the claim's content words appear in that segment or the 3 before. Tested: an unrelated claim with the same quote is dropped; a short quote never said is dropped. Rejected: a prompt rule demanding longer quotes (model-dependent; the verifier would still reject "Do that." whenever ignored). Known permissiveness: this checks that the claim is *supported*, not that it is correctly *classified*. "Thursday works." also passes as support for "have it ready by Thursday".
+- **Duplicate tasks in the submitted sample output** ("Update the Grafana dashboard" and "Take ownership of the Grafana dashboard", both Sam). **Fix (decided together):** Stage 4 merges action items with the same named owner and ≥2 shared word stems covering ≥50% of the smaller task. It keeps the longer wording plus any deadline from either. Unowned tasks are never merged. Rejected: a prompt rule (the earlier "check + prompt merge" option, which also stays model-dependent).
+- **Lena's "next week" deadline** is still missing in 2 of 3 held-out runs, without any downgrade: the model assigns the task from the acceptance ("Sure, I'll book five participants") and leaves out the deadline stated in the request. Stage 3 variance; reported, not tuned.
+
+### Held-out evaluation, read honestly
+- **Scorer bug:** "parked proposal reported as a decision" was the model reporting "Do NOT redesign onboarding; keep it small" — a legitimate decision to decline, like the OAuth deferral in the sample. Keyword overlap can't see "not". The proposal check is now negation-aware (in `evaluate.py` and `stage3_trials.py`); a reported refusal is printed as such.
+- **Visibility:** `evaluate.py` now prints every Stage 4 drop and downgrade. A held-out run dropped one item and lost Lena's "next week" deadline; without the drop list we couldn't tell whether those were related.
+- **Real recall miss, NOT tuned away:** "Do that." (approving lazy loading) was not reported as a decision. Changing the prompt to catch it would make the held-out set tuning data. Reported as a limitation instead.
+
+## [2026-10-06] Diarization phase 1 + Stage 3 action-item definition fix
+
+### Speaker diarization (built, optional)
+- **Pipeline:** Whisper segments are split at word gaps > 0.3 s (on our own fixture Whisper merged Priya's question and Arjun's answer into ONE segment, so segment-level labels would be wrong by construction); each chunk is embedded with **ECAPA-TDNN** (SpeechBrain, ungated, CPU); chunks are clustered with **our own average-linkage agglomerative clustering** on cosine distance via the Lance-Williams update (verified identical to brute-force average linkage). Chunks < 0.6 s don't vote; they are assigned to the nearest centroid. Labels are anonymous ("Speaker 1") — never guessed names.
+- **Optional:** `DIARIZE=auto|on|off`; deps in `requirements-diarization.txt` (torch is large). Without them the pipeline runs and says how to enable it.
+- **Threshold 0.65** = centre of the tuning plateau (DER flat at 8.0% for 0.55-0.75), then reported on a **held-out** meeting never used for tuning (4 speakers vs 3, different voices, many one-word turns): **4/4 speakers, DER 4.7%, zero speaker confusion, oracle gap +0.0%.** The held-out set's own best (0.50) invents a 5th speaker on the tuning set — hence plateau centre, not either minimum.
+- **Reading the DER:** residual error is missed speech at turn boundaries (word timestamps vs audio envelope), not mis-attribution. *(Corrected in the Phase 2 entry above: true on held-out; on the sample, 2.0 s is mis-attribution of Sam's one reply.)*
+- **Lesson encoded as a test:** with a blurrier stand-in embedder the same audio gives 2 speakers at 0.70 and 3 at 0.50. A threshold means nothing except relative to one embedder's geometry — hence tuning on the real model, on held-out data.
+- **Fixture bug found first:** the generator fell back to the system default voice for Sam — on this Mac, Priya's voice. Two people acoustically identical: untestable, and with naming would have attributed Sam's commitment to Priya (an invented owner, via the fixture). Generator now refuses duplicate voices and writes RTTM ground truth from trimmed speech bounds.
+
+### Stage 3 — the "failure" was our spec
+- Repeated trials (same transcript, model the only variable): Groq gpt-oss-120b found the owner-less "document the rollback procedure" task **0/4**, local 3/3. We had flip-flopped twice on single runs before measuring rates.
+- **Root cause was our prompt**: "an ACTION ITEM is work someone committed to" — "someone needs to..." is not a commitment, and the larger model applied the rule literally. Redefined: work the meeting says must be done, owner optional; tentative ideas and declined proposals excluded.
+- **After the fix:** Groq **45/45** (rollback 5/5), local 9/9; new trap "declined proposal must not become an action item" 5/5 + 1/1. **Auto-routing kept** (user decision — vindicated: correct AND ~4 s vs ~66 s). Groq varies in wording (4 distinct action sets / 5 runs), not in substance (all 9/9).
+- **Rate limit observed:** 5 calls in ~1 min crossed 6k TPM -> 429; the local fallback answered correctly. Trials now space calls 15 s — a 429 measures the limit, not the model.
+- **Unresolved, recorded honestly:** under the old prompt Stage 4 dropped one local item every run. Drop-reason printing was added, but the drop disappeared with the new prompt before it could be observed — unknown whether it was a fabrication caught or a valid item lost.
+
+### Stage 2 bugs exposed by regenerated audio (fixed, regression-tested)
+- New voices changed Whisper's segmentation, putting two "red is" in one segment: dedup + replace-first left the second uncorrected. Edits now apply to every occurrence within their segment, on **word boundaries** (plain substring replace would turn "colored island" into "coloRedisland"). Edge punctuation is stripped from proposals ('g r p c.' -> 'gRPC' was eating the full stop). New **no-op gate** rejects case/punctuation-only edits ('OAuth' -> 'OAuth').
+
+## [2026-10-06] Stage 4 grounding, Stage 3 routing, 20/20 evaluation
+*(Restored: this entry was written on 2026-10-06 but the write silently never reached disk — the same failure mode logged below for several files. Reconstructed from the session record.)*
+
+- **Evaluation 20/20** on the sample meeting: raw WER 1.68%, refinement never raised WER, jargon recovery 5/5 under injected ASR errors, negative control survived, no invented owners/deadlines, parked proposal never reported as a decision.
+- **Stage 4 grounding (built):** every decision/action item must have its evidence quote located in the transcript. **Graded response:** quote not found -> item DROPPED; quote found but owner/deadline never spoken -> keep the task, downgrade that field to `unspecified` (discarding the whole item would lose true information with the false). Surviving claims are anchored to a timestamp. 15/15 checks, no model needed.
+- **Stage 3 routing:** Groq free tier is 6,000 tokens/MINUTE; a 30-min meeting is ~6,800 tokens in one call and chunking can't help (you'd wait a minute per chunk). So: Groq `openai/gpt-oss-120b` under ~4,500 est. tokens (~20 min audio), local `qwen3:14b` above, local fallback on any error, and with no key everything is local. The widely documented `llama-3.3-70b-versatile` did not exist on our account; a 403 "error code 1010" turned out to be **Cloudflare rejecting urllib's default User-Agent**, swallowed by three layers of correct error handling into an empty record that looked like "no decisions" — hence every degradation now raises a visible warning.
+- **Negative-control bug (found by the control, fixed):** `'stage inn. Okay,' -> 'staging'` was APPLIED — the n-gram scan crossed a sentence boundary and the glued-on word made the phonetic code collide. Fixes: n-grams never span `.?!`; a symmetric length guard rejects spans far longer than the replacement. It took three attempts to build a valid control ('cuban eddies' never injected; 'oh auth' had a legitimately matching sub-token) — and the first valid one immediately found a real defect.
+- **Acoustic re-verification — designed, deliberately not built.** The naive version (re-run Whisper on the edit's time slice with the glossary term in `initial_prompt`, accept if it now outputs the term) is **circular**: `initial_prompt` biases the decoder toward the vocabulary you feed it, so it largely confirms whatever it was primed with. A valid version needs a **decoy control** — prime with the proposed term AND with a phonetically distant decoy; accept only if the audio yields the term but rejects the decoy; if both primes "win", the test is vacuous for that slice. Deferred because Stage 2 had zero observed false positives while Stage 3 had no verification at all.
+
+### Infrastructure note
+Several writes from the remote session reported success but never reached disk (`check_stage2.py`, the fixture JSON, `.gitignore`, `check_diarization.py`, `stage3_trials.py`, and this file). The symptom each time: behaviour contradicting the code believed to be there. Rule adopted: verify every write with `grep`/`stat` before trusting a test result.
 
 ## [2026-10-05] Stage 2 verification — LOCKED: allowlist gates, not a blocklist
 

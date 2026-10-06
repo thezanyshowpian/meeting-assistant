@@ -22,6 +22,8 @@ import os
 from .diarize import DiarizationResult, diarize, speechbrain_available
 from .glossary import Glossary, default_glossary
 from .ground import GroundingResult, ground
+from .naming import (NamingResult, Utterance, attribute_owners, infer_names,
+                     speaker_utterances)
 from .refine import RefinementResult, refine
 from .summarize import summarize
 from .transcribe import Stage1Transcriber
@@ -31,6 +33,8 @@ from .transcribe import Stage1Transcriber
 class PipelineResult:
     transcript: Transcript | None = None
     diarization: DiarizationResult | None = None
+    utterances: list[Utterance] | None = None      # refined text, split by speaker
+    naming: NamingResult | None = None
     refinement: RefinementResult | None = None
     record: MeetingRecord | None = None
     grounding: GroundingResult | None = None
@@ -62,6 +66,12 @@ class PipelineResult:
             "stage_times": {k: round(v, 2) for k, v in self.stage_times.items()},
             "raw_transcript": self.transcript.to_dict() if self.transcript else None,
             "diarization": self.diarization.to_dict() if self.diarization else None,
+            "speaker_names": self.naming.to_dict() if self.naming else None,
+            "speaker_transcript": [
+                {"segment_id": u.segment_id, "speaker": u.speaker,
+                 "name": self.naming.name_for(u.speaker) if self.naming else None,
+                 "start": round(u.start, 2), "text": u.text}
+                for u in self.utterances] if self.utterances else None,
             "refinement": self.refinement.to_dict() if self.refinement else None,
             "meeting_record": self.record.to_dict() if self.record else None,
             "grounding": self.grounding.to_dict() if self.grounding else None,
@@ -144,8 +154,20 @@ def run_pipeline(audio_path: str, *, glossary: Glossary | None = None,
     say("summarize", "Writing minutes, decisions and action items…")
     t0 = time.time()
     segments = result.refinement.segments if result.refinement else result.transcript.segments
+    if result.diarization:
+        # Stage 1.6 — speaker-labelled refined text, and names ONLY where the
+        # conversation gives evidence. Rules, not the model (see naming.py).
+        try:
+            result.utterances = speaker_utterances(
+                segments, result.refinement.edits if result.refinement else ())
+            result.naming = infer_names(result.utterances, glossary)
+            result.warnings += [f"Speaker labels: {m.describe()}; voice-based "
+                                f"owners from that line are withheld."
+                                for m in result.naming.suspects]
+        except Exception as exc:                                   # noqa: BLE001
+            result.warnings.append(f"Speaker naming could not run ({exc}).")
     try:
-        result.record = summarize(segments)
+        result.record = summarize(segments, utterances=result.utterances)
         result.warnings.extend(result.record.warnings)
     except Exception as exc:                                       # noqa: BLE001
         result.warnings.append(f"Meeting record could not be produced ({exc}).")
@@ -157,7 +179,10 @@ def run_pipeline(audio_path: str, *, glossary: Glossary | None = None,
         say("verify", "Checking every claim against the transcript…")
         t0 = time.time()
         try:
-            result.grounding = ground(result.record, segments)
+            result.grounding = ground(result.record, segments,
+                                      utterances=result.utterances,
+                                      naming=result.naming)
+            attribute_owners(result.record, result.naming)
             result.warnings.extend(
                 w for w in result.record.warnings if w not in result.warnings
             )
