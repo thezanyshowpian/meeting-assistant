@@ -10,10 +10,14 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Generated audio + outputs (regenerate with scripts/make_sample_meeting.py)
-data/sample_meeting.wav
+# Scratch audio from the Stage 1 spikes — not part of the submission.
 spikes/*.flac
 spikes/*.wav
+
+# NOTE: data/sample_meeting.wav is deliberately NOT ignored. The problem
+# statement requires the shareable meeting recording to be submitted alongside
+# the transcripts, minutes, decisions and action items generated from it, so the
+# audio and its outputs must travel together.
 
 # OS
 .DS_Store
