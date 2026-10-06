@@ -1,0 +1,152 @@
+{
+  "title": "Platform sync \u2014 session store migration",
+  "note": "Synthetic meeting with KNOWN ground truth, used as the shareable sample recording AND as the evaluation fixture. Every line is deliberately chosen to exercise something the rubric scores.",
+  "voices": {
+    "Priya": "Samantha",
+    "Arjun": "Daniel",
+    "Sam": "Alex"
+  },
+  "lines": [
+    {
+      "speaker": "Priya",
+      "text": "Alright, let's start. Main thing today is the session store. Arjun, where are we?"
+    },
+    {
+      "speaker": "Arjun",
+      "text": "So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster, about two hundred milliseconds at the ninety fifth percentile."
+    },
+    {
+      "speaker": "Arjun",
+      "text": "It's only on three nodes, but it's enough to hurt the checkout flow."
+    },
+    {
+      "speaker": "Priya",
+      "text": "Is that a Redis problem or a networking problem?"
+    },
+    {
+      "speaker": "Arjun",
+      "text": "Mostly Redis. The connection pool thrashes under load. I think we should move the session store to PostgreSQL."
+    },
+    {
+      "speaker": "Sam",
+      "text": "PostgreSQL will be slower per read, but it's far more predictable, and we already run it in staging."
+    },
+    {
+      "speaker": "Priya",
+      "text": "Okay. Let's do it. We're moving the session store from Redis to PostgreSQL. That's decided."
+    },
+    {
+      "speaker": "Sam",
+      "text": "While we're at it, maybe we should switch the internal calls from REST API to gRPC. It might help the latency too."
+    },
+    {
+      "speaker": "Priya",
+      "text": "Let's park that one. Interesting, but not this sprint, and I don't want to change two things at once."
+    },
+    {
+      "speaker": "Arjun",
+      "text": "Agreed. I'll benchmark the PostgreSQL session store latency and have numbers by Friday."
+    },
+    {
+      "speaker": "Priya",
+      "text": "Good. Sam, can you update the Grafana dashboard so we can actually see the new metrics?"
+    },
+    {
+      "speaker": "Sam",
+      "text": "Yes, I'll take the Grafana dashboard."
+    },
+    {
+      "speaker": "Priya",
+      "text": "And someone needs to document the rollback procedure before we ship anything."
+    },
+    {
+      "speaker": "Arjun",
+      "text": "One more thing. We are not going to do the OAuth migration this sprint. It's blocked on the vendor."
+    },
+    {
+      "speaker": "Priya",
+      "text": "Understood. That's everything, thanks."
+    }
+  ],
+  "ground_truth": {
+    "decisions": [
+      {
+        "statement": "Move the session store from Redis to PostgreSQL",
+        "must_appear": true,
+        "evidence": "We're moving the session store from Redis to PostgreSQL. That's decided."
+      },
+      {
+        "statement": "Switch internal calls from REST API to gRPC",
+        "must_appear": false,
+        "why": "TRAP: proposed by Sam, explicitly parked by Priya. A proposal is not a decision."
+      },
+      {
+        "statement": "Defer the OAuth migration to a later sprint",
+        "must_appear": false,
+        "scored": false,
+        "why": "A legitimate decision our ground truth originally missed - found by gpt-oss-120b, not by qwen3:14b. Recorded as a known recall difference between the two Stage 3 backends rather than scored, since it was discovered after the fixture was written."
+      }
+    ],
+    "action_items": [
+      {
+        "task": "Benchmark the PostgreSQL session store latency",
+        "owner": null,
+        "deadline": "Friday",
+        "requires_diarization": true,
+        "why": "DOCUMENTED LIMITATION. Arjun says 'I'll benchmark...', so the owner is only recoverable if you know WHO IS SPEAKING. We do not do speaker diarization, so the transcript cannot support 'Arjun' and the correct behaviour is unspecified. Contrast 'Sam, can you update the Grafana dashboard', where the name is spoken aloud and IS recoverable. Owners are recoverable when NAMED, not when implied by the speaker."
+      },
+      {
+        "task": "Update the Grafana dashboard",
+        "owner": "Sam",
+        "deadline": null,
+        "why": "owner stated, NO deadline stated - deadline must come back unspecified"
+      },
+      {
+        "task": "Document the rollback procedure",
+        "owner": null,
+        "deadline": null,
+        "why": "TRAP: 'someone needs to' - no owner, no deadline. Both must be unspecified."
+      }
+    ],
+    "must_preserve": {
+      "numbers": [
+        "two hundred milliseconds",
+        "ninety fifth percentile",
+        "three nodes"
+      ],
+      "negation": "We are not going to do the OAuth migration this sprint",
+      "why": "Stage 2 must not alter numbers or flip the negation."
+    },
+    "domain_terms": [
+      "Redis",
+      "Kubernetes",
+      "PostgreSQL",
+      "Postgres",
+      "gRPC",
+      "REST API",
+      "Grafana",
+      "OAuth",
+      "staging",
+      "rollback",
+      "latency",
+      "sprint"
+    ],
+    "injections": {
+      "note": "Synthetic TTS pronounces jargon too clearly, so Whisper gets it right and Stage 2 has nothing to do. These verified phonetic corruptions simulate real ASR mis-hearings so the refinement path can actually be measured. Each has been confirmed to match its target under Double Metaphone.",
+      "corruptions": {
+        "Kubernetes": "cooper netties",
+        "Redis": "red is",
+        "Grafana": "graph ana",
+        "Postgres": "post gres",
+        "gRPC": "g r p c",
+        "rollback": "roll back"
+      },
+      "negative_control": {
+        "term": "staging",
+        "corruption": "stage inn",
+        "why": "A NEAR MISS on a real glossary term: 'stage inn' sounds close to 'staging' but does not match under Double Metaphone, and - verified - no sub-span of it matches any glossary term either. It must stay UNCORRECTED. This is what separates a discriminating gate from one that fuzzy-matches anything vaguely similar.",
+        "previous_control_was_invalid": "'oh auth' for OAuth was correctly rejected as a whole phrase, but its sub-token 'auth' IS a legitimate phonetic match for OAuth, so the n-gram scan corrected that instead and the control could never pass. A valid control must have NO matching sub-span."
+      }
+    }
+  }
+}

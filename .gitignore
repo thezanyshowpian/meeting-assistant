@@ -1,0 +1,19 @@
+# Secrets — NEVER commit. The submission is a public-ish artifact; a key in the
+# repo is a real leak.
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Generated audio + outputs (regenerate with scripts/make_sample_meeting.py)
+data/sample_meeting.wav
+spikes/*.flac
+spikes/*.wav
+
+# OS
+.DS_Store

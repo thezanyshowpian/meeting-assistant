@@ -1,0 +1,1588 @@
+{
+  "ok": true,
+  "failed_stage": null,
+  "error": null,
+  "warnings": [],
+  "stage_times": {
+    "transcribe": 28.99,
+    "refine": 5.57,
+    "summarize": 3.74,
+    "verify": 0.0
+  },
+  "raw_transcript": {
+    "text": "Alright, let's start. Main thing today is the session store. Arjun, where are we? So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster, about 200 milliseconds at the 95th percentile. It's only on three nodes, but it's enough to hurt the checkout flow. Is that a Redis problem or a networking problem? Mostly Redis. The connection pool thrashes under load. I think we should move the session store to PostgreSQL. PostgreSQL will be slower per read, but it's far more predictable, and we already run it in staging. Okay, let's do it. We're moving the session store from Redis to PostgreSQL. That's decided. While we're at it, maybe we should switch the internal calls from REST API to GRPC. It might help the latency too. Let's park that one. Interesting, but not this sprint, and I don't want to change two things at once. Agreed. I'll benchmark the PostgreSQL session store latency and have numbers by Friday. Good. Sam, can you update the Grafana dashboard so we can actually see the new metrics? Yes, I'll take the Grafana dashboard. And someone needs to document the rollback procedure before we ship anything. One more thing. We are not going to do the OAuth migration this sprint. It's blocked on the vendor. Understood. That's everything. Thanks.",
+    "segments": [
+      {
+        "id": 0,
+        "start": 0.0,
+        "end": 5.06,
+        "text": "Alright, let's start. Main thing today is the session store. Arjun, where are we?",
+        "avg_logprob": -0.1095858115602184,
+        "no_speech_prob": 1.3383283196943818e-12,
+        "compression_ratio": 1.5755395683453237,
+        "words": [
+          {
+            "word": " Alright,",
+            "start": 0.0,
+            "end": 0.32,
+            "probability": 0.7524210214614868
+          },
+          {
+            "word": " let's",
+            "start": 0.72,
+            "end": 1.02,
+            "probability": 0.9919631779193878
+          },
+          {
+            "word": " start.",
+            "start": 1.02,
+            "end": 1.34,
+            "probability": 0.9997193217277527
+          },
+          {
+            "word": " Main",
+            "start": 1.68,
+            "end": 1.9,
+            "probability": 0.9960915446281433
+          },
+          {
+            "word": " thing",
+            "start": 1.9,
+            "end": 2.12,
+            "probability": 0.9989957213401794
+          },
+          {
+            "word": " today",
+            "start": 2.12,
+            "end": 2.4,
+            "probability": 0.9997319579124451
+          },
+          {
+            "word": " is",
+            "start": 2.4,
+            "end": 2.62,
+            "probability": 0.9998108744621277
+          },
+          {
+            "word": " the",
+            "start": 2.62,
+            "end": 2.76,
+            "probability": 0.9994567036628723
+          },
+          {
+            "word": " session",
+            "start": 2.76,
+            "end": 3.1,
+            "probability": 0.8392989039421082
+          },
+          {
+            "word": " store.",
+            "start": 3.1,
+            "end": 3.52,
+            "probability": 0.998482882976532
+          },
+          {
+            "word": " Arjun,",
+            "start": 3.76,
+            "end": 4.18,
+            "probability": 0.8790208697319031
+          },
+          {
+            "word": " where",
+            "start": 4.38,
+            "end": 4.68,
+            "probability": 0.9992620348930359
+          },
+          {
+            "word": " are",
+            "start": 4.68,
+            "end": 4.82,
+            "probability": 0.9999927282333374
+          },
+          {
+            "word": " we?",
+            "start": 4.82,
+            "end": 5.06,
+            "probability": 0.9999743700027466
+          }
+        ]
+      },
+      {
+        "id": 1,
+        "start": 5.38,
+        "end": 11.14,
+        "text": "So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster,",
+        "avg_logprob": -0.1095858115602184,
+        "no_speech_prob": 1.3383283196943818e-12,
+        "compression_ratio": 1.5755395683453237,
+        "words": [
+          {
+            "word": " So",
+            "start": 5.38,
+            "end": 5.92,
+            "probability": 0.9981347322463989
+          },
+          {
+            "word": " right",
+            "start": 5.92,
+            "end": 6.2,
+            "probability": 0.9973130822181702
+          },
+          {
+            "word": " now",
+            "start": 6.2,
+            "end": 6.42,
+            "probability": 0.9999707937240601
+          },
+          {
+            "word": " sessions",
+            "start": 6.42,
+            "end": 6.84,
+            "probability": 0.993833065032959
+          },
+          {
+            "word": " live",
+            "start": 6.84,
+            "end": 7.16,
+            "probability": 0.9999258518218994
+          },
+          {
+            "word": " in",
+            "start": 7.16,
+            "end": 7.3,
+            "probability": 0.9998693466186523
+          },
+          {
+            "word": " Redis,",
+            "start": 7.3,
+            "end": 7.78,
+            "probability": 0.9170406460762024
+          },
+          {
+            "word": " and",
+            "start": 7.96,
+            "end": 8.22,
+            "probability": 0.99872225522995
+          },
+          {
+            "word": " we're",
+            "start": 8.22,
+            "end": 8.42,
+            "probability": 0.9996813237667084
+          },
+          {
+            "word": " seeing",
+            "start": 8.42,
+            "end": 8.7,
+            "probability": 0.9998886585235596
+          },
+          {
+            "word": " latency",
+            "start": 8.7,
+            "end": 9.16,
+            "probability": 0.9996747970581055
+          },
+          {
+            "word": " spikes",
+            "start": 9.16,
+            "end": 9.64,
+            "probability": 0.9998412132263184
+          },
+          {
+            "word": " on",
+            "start": 9.64,
+            "end": 9.88,
+            "probability": 0.9998892545700073
+          },
+          {
+            "word": " the",
+            "start": 9.88,
+            "end": 10.0,
+            "probability": 0.9998588562011719
+          },
+          {
+            "word": " Kubernetes",
+            "start": 10.0,
+            "end": 10.4,
+            "probability": 0.9584484100341797
+          },
+          {
+            "word": " cluster,",
+            "start": 10.4,
+            "end": 11.14,
+            "probability": 0.9965972304344177
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "start": 11.4,
+        "end": 17.88,
+        "text": "about 200 milliseconds at the 95th percentile. It's only on three nodes, but it's enough to",
+        "avg_logprob": -0.1095858115602184,
+        "no_speech_prob": 1.3383283196943818e-12,
+        "compression_ratio": 1.5755395683453237,
+        "words": [
+          {
+            "word": " about",
+            "start": 11.4,
+            "end": 11.68,
+            "probability": 0.9997802376747131
+          },
+          {
+            "word": " 200",
+            "start": 11.68,
+            "end": 12.22,
+            "probability": 0.9996092915534973
+          },
+          {
+            "word": " milliseconds",
+            "start": 12.22,
+            "end": 12.72,
+            "probability": 0.9803035855293274
+          },
+          {
+            "word": " at",
+            "start": 12.72,
+            "end": 13.1,
+            "probability": 0.999982476234436
+          },
+          {
+            "word": " the",
+            "start": 13.1,
+            "end": 13.22,
+            "probability": 0.9999276399612427
+          },
+          {
+            "word": " 95th",
+            "start": 13.22,
+            "end": 13.94,
+            "probability": 0.9997373819351196
+          },
+          {
+            "word": " percentile.",
+            "start": 13.94,
+            "end": 14.74,
+            "probability": 0.9993481040000916
+          },
+          {
+            "word": " It's",
+            "start": 15.26,
+            "end": 15.64,
+            "probability": 0.9999330043792725
+          },
+          {
+            "word": " only",
+            "start": 15.64,
+            "end": 15.86,
+            "probability": 0.9998348951339722
+          },
+          {
+            "word": " on",
+            "start": 15.86,
+            "end": 16.06,
+            "probability": 0.9999772310256958
+          },
+          {
+            "word": " three",
+            "start": 16.06,
+            "end": 16.32,
+            "probability": 0.7463670372962952
+          },
+          {
+            "word": " nodes,",
+            "start": 16.32,
+            "end": 16.78,
+            "probability": 0.999909520149231
+          },
+          {
+            "word": " but",
+            "start": 17.06,
+            "end": 17.3,
+            "probability": 0.9999436140060425
+          },
+          {
+            "word": " it's",
+            "start": 17.3,
+            "end": 17.5,
+            "probability": 0.9999879002571106
+          },
+          {
+            "word": " enough",
+            "start": 17.5,
+            "end": 17.7,
+            "probability": 0.9998800754547119
+          },
+          {
+            "word": " to",
+            "start": 17.7,
+            "end": 17.88,
+            "probability": 0.9999886751174927
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "start": 17.88,
+        "end": 22.18,
+        "text": "hurt the checkout flow. Is that a Redis problem or a networking problem?",
+        "avg_logprob": -0.1095858115602184,
+        "no_speech_prob": 1.3383283196943818e-12,
+        "compression_ratio": 1.5755395683453237,
+        "words": [
+          {
+            "word": " hurt",
+            "start": 17.88,
+            "end": 18.12,
+            "probability": 0.9970967769622803
+          },
+          {
+            "word": " the",
+            "start": 18.12,
+            "end": 18.28,
+            "probability": 0.9999810457229614
+          },
+          {
+            "word": " checkout",
+            "start": 18.28,
+            "end": 18.62,
+            "probability": 0.995001494884491
+          },
+          {
+            "word": " flow.",
+            "start": 18.62,
+            "end": 19.08,
+            "probability": 0.9997038245201111
+          },
+          {
+            "word": " Is",
+            "start": 19.66,
+            "end": 19.96,
+            "probability": 0.9996029734611511
+          },
+          {
+            "word": " that",
+            "start": 19.96,
+            "end": 20.12,
+            "probability": 0.9999923706054688
+          },
+          {
+            "word": " a",
+            "start": 20.12,
+            "end": 20.24,
+            "probability": 0.9999806880950928
+          },
+          {
+            "word": " Redis",
+            "start": 20.24,
+            "end": 20.52,
+            "probability": 0.9981797933578491
+          },
+          {
+            "word": " problem",
+            "start": 20.52,
+            "end": 20.9,
+            "probability": 0.9999312162399292
+          },
+          {
+            "word": " or",
+            "start": 20.9,
+            "end": 21.1,
+            "probability": 0.9982761144638062
+          },
+          {
+            "word": " a",
+            "start": 21.1,
+            "end": 21.24,
+            "probability": 0.9999455213546753
+          },
+          {
+            "word": " networking",
+            "start": 21.24,
+            "end": 21.7,
+            "probability": 0.9997536540031433
+          },
+          {
+            "word": " problem?",
+            "start": 21.7,
+            "end": 22.18,
+            "probability": 0.9999639987945557
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "start": 22.78,
+        "end": 28.36,
+        "text": "Mostly Redis. The connection pool thrashes under load. I think we should move the session store",
+        "avg_logprob": -0.1095858115602184,
+        "no_speech_prob": 1.3383283196943818e-12,
+        "compression_ratio": 1.5755395683453237,
+        "words": [
+          {
+            "word": " Mostly",
+            "start": 22.78,
+            "end": 23.34,
+            "probability": 0.9986394047737122
+          },
+          {
+            "word": " Redis.",
+            "start": 23.34,
+            "end": 23.86,
+            "probability": 0.9991917610168457
+          },
+          {
+            "word": " The",
+            "start": 24.14,
+            "end": 24.32,
+            "probability": 0.9993721842765808
+          },
+          {
+            "word": " connection",
+            "start": 24.32,
+            "end": 24.7,
+            "probability": 0.9846324920654297
+          },
+          {
+            "word": " pool",
+            "start": 24.7,
+            "end": 25.08,
+            "probability": 0.9788438677787781
+          },
+          {
+            "word": " thrashes",
+            "start": 25.08,
+            "end": 25.54,
+            "probability": 0.9160307347774506
+          },
+          {
+            "word": " under",
+            "start": 25.54,
+            "end": 25.88,
+            "probability": 0.99679034948349
+          },
+          {
+            "word": " load.",
+            "start": 25.88,
+            "end": 26.22,
+            "probability": 0.9811354279518127
+          },
+          {
+            "word": " I",
+            "start": 26.42,
+            "end": 26.62,
+            "probability": 0.9992830157279968
+          },
+          {
+            "word": " think",
+            "start": 26.62,
+            "end": 26.88,
+            "probability": 0.9999805688858032
+          },
+          {
+            "word": " we",
+            "start": 26.88,
+            "end": 27.06,
+            "probability": 0.9999909400939941
+          },
+          {
+            "word": " should",
+            "start": 27.06,
+            "end": 27.28,
+            "probability": 0.999972939491272
+          },
+          {
+            "word": " move",
+            "start": 27.28,
+            "end": 27.48,
+            "probability": 0.9998708963394165
+          },
+          {
+            "word": " the",
+            "start": 27.48,
+            "end": 27.66,
+            "probability": 0.9999656677246094
+          },
+          {
+            "word": " session",
+            "start": 27.66,
+            "end": 28.0,
+            "probability": 0.9963411688804626
+          },
+          {
+            "word": " store",
+            "start": 28.0,
+            "end": 28.36,
+            "probability": 0.9998718500137329
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "start": 28.36,
+        "end": 35.42,
+        "text": "to PostgreSQL. PostgreSQL will be slower per read, but it's far more predictable, and we already run",
+        "avg_logprob": -0.0724929412206014,
+        "no_speech_prob": 1.610848498860562e-12,
+        "compression_ratio": 1.5201612903225807,
+        "words": [
+          {
+            "word": " to",
+            "start": 28.36,
+            "end": 28.52,
+            "probability": 0.8251912593841553
+          },
+          {
+            "word": " PostgreSQL.",
+            "start": 28.52,
+            "end": 29.38,
+            "probability": 0.8860019246737162
+          },
+          {
+            "word": " PostgreSQL",
+            "start": 30.52,
+            "end": 31.12,
+            "probability": 0.995755116144816
+          },
+          {
+            "word": " will",
+            "start": 31.12,
+            "end": 31.5,
+            "probability": 0.9992470741271973
+          },
+          {
+            "word": " be",
+            "start": 31.5,
+            "end": 31.66,
+            "probability": 0.999927282333374
+          },
+          {
+            "word": " slower",
+            "start": 31.66,
+            "end": 31.96,
+            "probability": 0.9997544884681702
+          },
+          {
+            "word": " per",
+            "start": 31.96,
+            "end": 32.26,
+            "probability": 0.998735249042511
+          },
+          {
+            "word": " read,",
+            "start": 32.26,
+            "end": 32.54,
+            "probability": 0.966468334197998
+          },
+          {
+            "word": " but",
+            "start": 32.72,
+            "end": 32.92,
+            "probability": 0.999785840511322
+          },
+          {
+            "word": " it's",
+            "start": 32.92,
+            "end": 33.12,
+            "probability": 0.9993928968906403
+          },
+          {
+            "word": " far",
+            "start": 33.12,
+            "end": 33.3,
+            "probability": 0.9995447993278503
+          },
+          {
+            "word": " more",
+            "start": 33.3,
+            "end": 33.52,
+            "probability": 0.9998555183410645
+          },
+          {
+            "word": " predictable,",
+            "start": 33.52,
+            "end": 34.06,
+            "probability": 0.9997592568397522
+          },
+          {
+            "word": " and",
+            "start": 34.06,
+            "end": 34.62,
+            "probability": 0.9998513460159302
+          },
+          {
+            "word": " we",
+            "start": 34.62,
+            "end": 34.76,
+            "probability": 0.9999475479125977
+          },
+          {
+            "word": " already",
+            "start": 34.76,
+            "end": 35.16,
+            "probability": 0.9997900128364563
+          },
+          {
+            "word": " run",
+            "start": 35.16,
+            "end": 35.42,
+            "probability": 0.9998408555984497
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "start": 35.42,
+        "end": 41.58,
+        "text": "it in staging. Okay, let's do it. We're moving the session store from Redis to PostgreSQL.",
+        "avg_logprob": -0.0724929412206014,
+        "no_speech_prob": 1.610848498860562e-12,
+        "compression_ratio": 1.5201612903225807,
+        "words": [
+          {
+            "word": " it",
+            "start": 35.42,
+            "end": 35.56,
+            "probability": 0.9996981620788574
+          },
+          {
+            "word": " in",
+            "start": 35.56,
+            "end": 35.7,
+            "probability": 0.9995023012161255
+          },
+          {
+            "word": " staging.",
+            "start": 35.7,
+            "end": 36.1,
+            "probability": 0.9788939356803894
+          },
+          {
+            "word": " Okay,",
+            "start": 36.74,
+            "end": 37.14,
+            "probability": 0.924693763256073
+          },
+          {
+            "word": " let's",
+            "start": 37.52,
+            "end": 37.9,
+            "probability": 0.9997976720333099
+          },
+          {
+            "word": " do",
+            "start": 37.9,
+            "end": 38.06,
+            "probability": 0.9999704360961914
+          },
+          {
+            "word": " it.",
+            "start": 38.06,
+            "end": 38.32,
+            "probability": 0.9999403953552246
+          },
+          {
+            "word": " We're",
+            "start": 38.48,
+            "end": 38.78,
+            "probability": 0.9997067153453827
+          },
+          {
+            "word": " moving",
+            "start": 38.78,
+            "end": 39.08,
+            "probability": 0.9998512268066406
+          },
+          {
+            "word": " the",
+            "start": 39.08,
+            "end": 39.24,
+            "probability": 0.9997155070304871
+          },
+          {
+            "word": " session",
+            "start": 39.24,
+            "end": 39.58,
+            "probability": 0.8771132230758667
+          },
+          {
+            "word": " store",
+            "start": 39.58,
+            "end": 39.9,
+            "probability": 0.9835532903671265
+          },
+          {
+            "word": " from",
+            "start": 39.9,
+            "end": 40.14,
+            "probability": 0.9997369647026062
+          },
+          {
+            "word": " Redis",
+            "start": 40.14,
+            "end": 40.48,
+            "probability": 0.6821630597114563
+          },
+          {
+            "word": " to",
+            "start": 40.48,
+            "end": 40.64,
+            "probability": 0.9989193677902222
+          },
+          {
+            "word": " PostgreSQL.",
+            "start": 40.64,
+            "end": 41.58,
+            "probability": 0.9992597500483195
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "start": 42.0,
+        "end": 48.28,
+        "text": "That's decided. While we're at it, maybe we should switch the internal calls from REST API to GRPC.",
+        "avg_logprob": -0.0724929412206014,
+        "no_speech_prob": 1.610848498860562e-12,
+        "compression_ratio": 1.5201612903225807,
+        "words": [
+          {
+            "word": " That's",
+            "start": 42.0,
+            "end": 42.34,
+            "probability": 0.9993734359741211
+          },
+          {
+            "word": " decided.",
+            "start": 42.34,
+            "end": 42.84,
+            "probability": 0.9995660185813904
+          },
+          {
+            "word": " While",
+            "start": 43.14,
+            "end": 43.74,
+            "probability": 0.9995526671409607
+          },
+          {
+            "word": " we're",
+            "start": 43.74,
+            "end": 43.98,
+            "probability": 0.9999304413795471
+          },
+          {
+            "word": " at",
+            "start": 43.98,
+            "end": 44.12,
+            "probability": 0.9947217702865601
+          },
+          {
+            "word": " it,",
+            "start": 44.12,
+            "end": 44.3,
+            "probability": 0.9996740818023682
+          },
+          {
+            "word": " maybe",
+            "start": 44.56,
+            "end": 44.76,
+            "probability": 0.9993066787719727
+          },
+          {
+            "word": " we",
+            "start": 44.76,
+            "end": 44.94,
+            "probability": 0.999974250793457
+          },
+          {
+            "word": " should",
+            "start": 44.94,
+            "end": 45.16,
+            "probability": 0.9998045563697815
+          },
+          {
+            "word": " switch",
+            "start": 45.16,
+            "end": 45.44,
+            "probability": 0.9998549222946167
+          },
+          {
+            "word": " the",
+            "start": 45.44,
+            "end": 45.62,
+            "probability": 0.9997596144676208
+          },
+          {
+            "word": " internal",
+            "start": 45.62,
+            "end": 46.02,
+            "probability": 0.9986780285835266
+          },
+          {
+            "word": " calls",
+            "start": 46.02,
+            "end": 46.4,
+            "probability": 0.9996311664581299
+          },
+          {
+            "word": " from",
+            "start": 46.4,
+            "end": 46.62,
+            "probability": 0.9999113082885742
+          },
+          {
+            "word": " REST",
+            "start": 46.62,
+            "end": 46.92,
+            "probability": 0.9847264587879181
+          },
+          {
+            "word": " API",
+            "start": 46.92,
+            "end": 47.28,
+            "probability": 0.9963623881340027
+          },
+          {
+            "word": " to",
+            "start": 47.28,
+            "end": 47.6,
+            "probability": 0.9999630451202393
+          },
+          {
+            "word": " GRPC.",
+            "start": 47.6,
+            "end": 48.28,
+            "probability": 0.7744284868240356
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "start": 48.6,
+        "end": 54.12,
+        "text": "It might help the latency too. Let's park that one. Interesting, but not this sprint,",
+        "avg_logprob": -0.0724929412206014,
+        "no_speech_prob": 1.610848498860562e-12,
+        "compression_ratio": 1.5201612903225807,
+        "words": [
+          {
+            "word": " It",
+            "start": 48.6,
+            "end": 48.88,
+            "probability": 0.9993646740913391
+          },
+          {
+            "word": " might",
+            "start": 48.88,
+            "end": 49.04,
+            "probability": 0.9998894929885864
+          },
+          {
+            "word": " help",
+            "start": 49.04,
+            "end": 49.34,
+            "probability": 0.9998571872711182
+          },
+          {
+            "word": " the",
+            "start": 49.34,
+            "end": 49.48,
+            "probability": 0.9998617172241211
+          },
+          {
+            "word": " latency",
+            "start": 49.48,
+            "end": 49.84,
+            "probability": 0.9961567521095276
+          },
+          {
+            "word": " too.",
+            "start": 49.84,
+            "end": 50.24,
+            "probability": 0.8366250991821289
+          },
+          {
+            "word": " Let's",
+            "start": 50.8,
+            "end": 51.24,
+            "probability": 0.9998840391635895
+          },
+          {
+            "word": " park",
+            "start": 51.24,
+            "end": 51.48,
+            "probability": 0.996993899345398
+          },
+          {
+            "word": " that",
+            "start": 51.48,
+            "end": 51.7,
+            "probability": 0.9999176263809204
+          },
+          {
+            "word": " one.",
+            "start": 51.7,
+            "end": 52.04,
+            "probability": 0.9988445043563843
+          },
+          {
+            "word": " Interesting,",
+            "start": 52.34,
+            "end": 52.84,
+            "probability": 0.9985093474388123
+          },
+          {
+            "word": " but",
+            "start": 53.08,
+            "end": 53.34,
+            "probability": 0.9999182224273682
+          },
+          {
+            "word": " not",
+            "start": 53.34,
+            "end": 53.54,
+            "probability": 0.999962568283081
+          },
+          {
+            "word": " this",
+            "start": 53.54,
+            "end": 53.78,
+            "probability": 0.9998626708984375
+          },
+          {
+            "word": " sprint,",
+            "start": 53.78,
+            "end": 54.12,
+            "probability": 0.9900749325752258
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "start": 54.12,
+        "end": 60.62,
+        "text": "and I don't want to change two things at once. Agreed. I'll benchmark the PostgreSQL session",
+        "avg_logprob": -0.048445712659776825,
+        "no_speech_prob": 1.7565246132611456e-12,
+        "compression_ratio": 1.5387755102040817,
+        "words": [
+          {
+            "word": " and",
+            "start": 54.12,
+            "end": 54.56,
+            "probability": 0.7314395904541016
+          },
+          {
+            "word": " I",
+            "start": 54.56,
+            "end": 54.74,
+            "probability": 0.9598398804664612
+          },
+          {
+            "word": " don't",
+            "start": 54.74,
+            "end": 55.02,
+            "probability": 0.9997884631156921
+          },
+          {
+            "word": " want",
+            "start": 55.02,
+            "end": 55.22,
+            "probability": 0.9999779462814331
+          },
+          {
+            "word": " to",
+            "start": 55.22,
+            "end": 55.4,
+            "probability": 0.9999864101409912
+          },
+          {
+            "word": " change",
+            "start": 55.4,
+            "end": 55.72,
+            "probability": 0.9999583959579468
+          },
+          {
+            "word": " two",
+            "start": 55.72,
+            "end": 55.98,
+            "probability": 0.9844456315040588
+          },
+          {
+            "word": " things",
+            "start": 55.98,
+            "end": 56.3,
+            "probability": 0.9999860525131226
+          },
+          {
+            "word": " at",
+            "start": 56.3,
+            "end": 56.5,
+            "probability": 0.9999827146530151
+          },
+          {
+            "word": " once.",
+            "start": 56.5,
+            "end": 56.9,
+            "probability": 0.9999384880065918
+          },
+          {
+            "word": " Agreed.",
+            "start": 57.42,
+            "end": 58.04,
+            "probability": 0.9988636076450348
+          },
+          {
+            "word": " I'll",
+            "start": 58.24,
+            "end": 58.48,
+            "probability": 0.99959996342659
+          },
+          {
+            "word": " benchmark",
+            "start": 58.48,
+            "end": 58.96,
+            "probability": 0.9997523427009583
+          },
+          {
+            "word": " the",
+            "start": 58.96,
+            "end": 59.18,
+            "probability": 0.9998218417167664
+          },
+          {
+            "word": " PostgreSQL",
+            "start": 59.18,
+            "end": 60.16,
+            "probability": 0.8345943490664164
+          },
+          {
+            "word": " session",
+            "start": 60.16,
+            "end": 60.62,
+            "probability": 0.9767732620239258
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "start": 60.62,
+        "end": 66.5,
+        "text": "store latency and have numbers by Friday. Good. Sam, can you update the Grafana dashboard",
+        "avg_logprob": -0.048445712659776825,
+        "no_speech_prob": 1.7565246132611456e-12,
+        "compression_ratio": 1.5387755102040817,
+        "words": [
+          {
+            "word": " store",
+            "start": 60.62,
+            "end": 60.96,
+            "probability": 0.9833804368972778
+          },
+          {
+            "word": " latency",
+            "start": 60.96,
+            "end": 61.32,
+            "probability": 0.999862551689148
+          },
+          {
+            "word": " and",
+            "start": 61.32,
+            "end": 61.62,
+            "probability": 0.9964474439620972
+          },
+          {
+            "word": " have",
+            "start": 61.62,
+            "end": 61.84,
+            "probability": 0.9999650716781616
+          },
+          {
+            "word": " numbers",
+            "start": 61.84,
+            "end": 62.2,
+            "probability": 0.9998794794082642
+          },
+          {
+            "word": " by",
+            "start": 62.2,
+            "end": 62.42,
+            "probability": 0.9999703168869019
+          },
+          {
+            "word": " Friday.",
+            "start": 62.42,
+            "end": 62.86,
+            "probability": 0.9996267557144165
+          },
+          {
+            "word": " Good.",
+            "start": 63.5,
+            "end": 63.84,
+            "probability": 0.9992592930793762
+          },
+          {
+            "word": " Sam,",
+            "start": 64.02,
+            "end": 64.42,
+            "probability": 0.9993822574615479
+          },
+          {
+            "word": " can",
+            "start": 64.66,
+            "end": 64.94,
+            "probability": 0.9996871948242188
+          },
+          {
+            "word": " you",
+            "start": 64.94,
+            "end": 65.08,
+            "probability": 0.9999911785125732
+          },
+          {
+            "word": " update",
+            "start": 65.08,
+            "end": 65.44,
+            "probability": 0.9999382495880127
+          },
+          {
+            "word": " the",
+            "start": 65.44,
+            "end": 65.6,
+            "probability": 0.9998974800109863
+          },
+          {
+            "word": " Grafana",
+            "start": 65.6,
+            "end": 66.08,
+            "probability": 0.985563854376475
+          },
+          {
+            "word": " dashboard",
+            "start": 66.08,
+            "end": 66.5,
+            "probability": 0.9953475594520569
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "start": 66.5,
+        "end": 73.38,
+        "text": "so we can actually see the new metrics? Yes, I'll take the Grafana dashboard. And someone needs",
+        "avg_logprob": -0.048445712659776825,
+        "no_speech_prob": 1.7565246132611456e-12,
+        "compression_ratio": 1.5387755102040817,
+        "words": [
+          {
+            "word": " so",
+            "start": 66.5,
+            "end": 66.88,
+            "probability": 0.9990971088409424
+          },
+          {
+            "word": " we",
+            "start": 66.88,
+            "end": 67.06,
+            "probability": 0.9999798536300659
+          },
+          {
+            "word": " can",
+            "start": 67.06,
+            "end": 67.26,
+            "probability": 0.9999806880950928
+          },
+          {
+            "word": " actually",
+            "start": 67.26,
+            "end": 67.68,
+            "probability": 0.9997168183326721
+          },
+          {
+            "word": " see",
+            "start": 67.68,
+            "end": 68.02,
+            "probability": 0.9999516010284424
+          },
+          {
+            "word": " the",
+            "start": 68.02,
+            "end": 68.18,
+            "probability": 0.9999696016311646
+          },
+          {
+            "word": " new",
+            "start": 68.18,
+            "end": 68.36,
+            "probability": 0.9995831847190857
+          },
+          {
+            "word": " metrics?",
+            "start": 68.36,
+            "end": 68.78,
+            "probability": 0.9997970461845398
+          },
+          {
+            "word": " Yes,",
+            "start": 69.42,
+            "end": 69.9,
+            "probability": 0.9999079704284668
+          },
+          {
+            "word": " I'll",
+            "start": 70.08,
+            "end": 70.4,
+            "probability": 0.999966561794281
+          },
+          {
+            "word": " take",
+            "start": 70.4,
+            "end": 70.62,
+            "probability": 0.9999701976776123
+          },
+          {
+            "word": " the",
+            "start": 70.62,
+            "end": 70.78,
+            "probability": 0.9999699592590332
+          },
+          {
+            "word": " Grafana",
+            "start": 70.78,
+            "end": 71.26,
+            "probability": 0.999919613202413
+          },
+          {
+            "word": " dashboard.",
+            "start": 71.26,
+            "end": 71.88,
+            "probability": 0.9999809265136719
+          },
+          {
+            "word": " And",
+            "start": 72.16,
+            "end": 72.72,
+            "probability": 0.9994161128997803
+          },
+          {
+            "word": " someone",
+            "start": 72.72,
+            "end": 73.06,
+            "probability": 0.9996854066848755
+          },
+          {
+            "word": " needs",
+            "start": 73.06,
+            "end": 73.38,
+            "probability": 0.9999330043792725
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "start": 73.38,
+        "end": 79.4,
+        "text": "to document the rollback procedure before we ship anything. One more thing. We are not going to do",
+        "avg_logprob": -0.048445712659776825,
+        "no_speech_prob": 1.7565246132611456e-12,
+        "compression_ratio": 1.5387755102040817,
+        "words": [
+          {
+            "word": " to",
+            "start": 73.38,
+            "end": 73.56,
+            "probability": 0.9999604225158691
+          },
+          {
+            "word": " document",
+            "start": 73.56,
+            "end": 74.04,
+            "probability": 0.999487042427063
+          },
+          {
+            "word": " the",
+            "start": 74.04,
+            "end": 74.26,
+            "probability": 0.9999033212661743
+          },
+          {
+            "word": " rollback",
+            "start": 74.26,
+            "end": 74.68,
+            "probability": 0.9975034296512604
+          },
+          {
+            "word": " procedure",
+            "start": 74.68,
+            "end": 75.18,
+            "probability": 0.9997239708900452
+          },
+          {
+            "word": " before",
+            "start": 75.18,
+            "end": 75.54,
+            "probability": 0.9999195337295532
+          },
+          {
+            "word": " we",
+            "start": 75.54,
+            "end": 75.82,
+            "probability": 0.9999663829803467
+          },
+          {
+            "word": " ship",
+            "start": 75.82,
+            "end": 76.06,
+            "probability": 0.9997244477272034
+          },
+          {
+            "word": " anything.",
+            "start": 76.06,
+            "end": 76.5,
+            "probability": 0.9998705387115479
+          },
+          {
+            "word": " One",
+            "start": 76.9,
+            "end": 77.38,
+            "probability": 0.9997212290763855
+          },
+          {
+            "word": " more",
+            "start": 77.38,
+            "end": 77.6,
+            "probability": 0.9999728202819824
+          },
+          {
+            "word": " thing.",
+            "start": 77.6,
+            "end": 77.9,
+            "probability": 0.9999836683273315
+          },
+          {
+            "word": " We",
+            "start": 78.16,
+            "end": 78.4,
+            "probability": 0.999785840511322
+          },
+          {
+            "word": " are",
+            "start": 78.4,
+            "end": 78.56,
+            "probability": 0.9997889399528503
+          },
+          {
+            "word": " not",
+            "start": 78.56,
+            "end": 78.78,
+            "probability": 0.9999430179595947
+          },
+          {
+            "word": " going",
+            "start": 78.78,
+            "end": 79.04,
+            "probability": 0.9999567270278931
+          },
+          {
+            "word": " to",
+            "start": 79.04,
+            "end": 79.24,
+            "probability": 0.9999909400939941
+          },
+          {
+            "word": " do",
+            "start": 79.24,
+            "end": 79.4,
+            "probability": 0.999903678894043
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "start": 79.4,
+        "end": 85.76,
+        "text": "the OAuth migration this sprint. It's blocked on the vendor. Understood. That's everything. Thanks.",
+        "avg_logprob": -0.04501045346260071,
+        "no_speech_prob": 3.2164809010692963e-12,
+        "compression_ratio": 1.0879120879120878,
+        "words": [
+          {
+            "word": " the",
+            "start": 79.4,
+            "end": 79.6,
+            "probability": 0.5703932642936707
+          },
+          {
+            "word": " OAuth",
+            "start": 79.6,
+            "end": 79.94,
+            "probability": 0.9277203977108002
+          },
+          {
+            "word": " migration",
+            "start": 79.94,
+            "end": 80.48,
+            "probability": 0.9633033275604248
+          },
+          {
+            "word": " this",
+            "start": 80.48,
+            "end": 80.78,
+            "probability": 0.9940503239631653
+          },
+          {
+            "word": " sprint.",
+            "start": 80.78,
+            "end": 81.18,
+            "probability": 0.9493852853775024
+          },
+          {
+            "word": " It's",
+            "start": 81.52,
+            "end": 81.84,
+            "probability": 0.9598437249660492
+          },
+          {
+            "word": " blocked",
+            "start": 81.84,
+            "end": 82.12,
+            "probability": 0.9973681569099426
+          },
+          {
+            "word": " on",
+            "start": 82.12,
+            "end": 82.3,
+            "probability": 0.9992450475692749
+          },
+          {
+            "word": " the",
+            "start": 82.3,
+            "end": 82.4,
+            "probability": 0.9992475509643555
+          },
+          {
+            "word": " vendor.",
+            "start": 82.4,
+            "end": 82.76,
+            "probability": 0.9888119697570801
+          },
+          {
+            "word": " Understood.",
+            "start": 83.16,
+            "end": 83.84,
+            "probability": 0.9881476759910583
+          },
+          {
+            "word": " That's",
+            "start": 84.2,
+            "end": 84.58,
+            "probability": 0.9992420971393585
+          },
+          {
+            "word": " everything.",
+            "start": 84.58,
+            "end": 84.94,
+            "probability": 0.9990559220314026
+          },
+          {
+            "word": " Thanks.",
+            "start": 85.32,
+            "end": 85.76,
+            "probability": 0.9981695413589478
+          }
+        ]
+      }
+    ],
+    "language": "en",
+    "duration": 86.5203125,
+    "model": "large-v3-turbo",
+    "decode_method": "pyav",
+    "warnings": [],
+    "processing_seconds": 26.13379716873169,
+    "is_empty": false,
+    "low_confidence_segment_ids": [],
+    "realtime_factor": 0.302
+  },
+  "refinement": {
+    "raw_text": "Alright, let's start. Main thing today is the session store. Arjun, where are we? So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster, about 200 milliseconds at the 95th percentile. It's only on three nodes, but it's enough to hurt the checkout flow. Is that a Redis problem or a networking problem? Mostly Redis. The connection pool thrashes under load. I think we should move the session store to PostgreSQL. PostgreSQL will be slower per read, but it's far more predictable, and we already run it in staging. Okay, let's do it. We're moving the session store from Redis to PostgreSQL. That's decided. While we're at it, maybe we should switch the internal calls from REST API to GRPC. It might help the latency too. Let's park that one. Interesting, but not this sprint, and I don't want to change two things at once. Agreed. I'll benchmark the PostgreSQL session store latency and have numbers by Friday. Good. Sam, can you update the Grafana dashboard so we can actually see the new metrics? Yes, I'll take the Grafana dashboard. And someone needs to document the rollback procedure before we ship anything. One more thing. We are not going to do the OAuth migration this sprint. It's blocked on the vendor. Understood. That's everything. Thanks.",
+    "refined_text": "Alright, let's start. Main thing today is the session store. Arjun, where are we? So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster, about 200 milliseconds at the 95th percentile. It's only on three nodes, but it's enough to hurt the checkout flow. Is that a Redis problem or a networking problem? Mostly Redis. The connection pool thrashes under load. I think we should move the session store to PostgreSQL. PostgreSQL will be slower per read, but it's far more predictable, and we already run it in staging. Okay, let's do it. We're moving the session store from Redis to PostgreSQL. That's decided. While we're at it, maybe we should switch the internal calls from REST API to GRPC. It might help the latency too. Let's park that one. Interesting, but not this sprint, and I don't want to change two things at once. Agreed. I'll benchmark the PostgreSQL session store latency and have numbers by Friday. Good. Sam, can you update the Grafana dashboard so we can actually see the new metrics? Yes, I'll take the Grafana dashboard. And someone needs to document the rollback procedure before we ship anything. One more thing. We are not going to do the OAuth migration this sprint. It's blocked on the vendor. Understood. That's everything. Thanks.",
+    "model": "qwen3:8b",
+    "processing_seconds": 5.57,
+    "edits_applied": [],
+    "edits_rejected": [
+      {
+        "segment_id": 7,
+        "original": "GRPC",
+        "replacement": "gRPC",
+        "edit_type": "substitution",
+        "reason": "phonetically matches gRPC",
+        "confidence": 0.9,
+        "source": "llm",
+        "glossary_backed": true,
+        "vetoed": false,
+        "accepted": false,
+        "rejections": [
+          "transcribed with high confidence (0.77) — not a likely mis-hearing"
+        ],
+        "evidence": ""
+      }
+    ],
+    "warnings": []
+  },
+  "meeting_record": {
+    "summary": "The team decided to migrate the session store from Redis to PostgreSQL, set up benchmarking for the new store, assigned Grafana dashboard updates to Sam, and postponed the OAuth migration for this sprint.",
+    "minutes": [
+      "Alright, let's start. Main thing today is the session store. Arjun, where are we?",
+      "So right now sessions live in Redis, and we're seeing latency spikes on the Kubernetes cluster, about 200 milliseconds at the 95th percentile. It's only on three nodes, but it's enough to hurt the checkout flow. Is that a Redis problem or a networking problem?",
+      "Mostly Redis. The connection pool thrashes under load. I think we should move the session store to PostgreSQL. PostgreSQL will be slower per read, but it's far more predictable, and we already run it in staging.",
+      "Okay, let's do it. We're moving the session store from Redis to PostgreSQL.",
+      "That's decided. While we're at it, maybe we should switch the internal calls from REST API to GRPC.",
+      "It might help the latency too. Let's park that one. Interesting, but not this sprint, and I don't want to change two things at once.",
+      "Agreed. I'll benchmark the PostgreSQL session store latency and have numbers by Friday.",
+      "Good. Sam, can you update the Grafana dashboard so we can actually see the new metrics?",
+      "Yes, I'll take the Grafana dashboard. And someone needs to document the rollback procedure before we ship anything.",
+      "One more thing. We are not going to do the OAuth migration this sprint. It's blocked on the vendor.",
+      "Understood. That's everything. Thanks."
+    ],
+    "decisions": [
+      {
+        "statement": "We are moving the session store from Redis to PostgreSQL.",
+        "evidence": "Okay, let's do it. We're moving the session store from Redis to PostgreSQL.",
+        "segment_id": 6,
+        "timestamp": 35.42
+      },
+      {
+        "statement": "We are not going to do the OAuth migration this sprint.",
+        "evidence": "We are not going to do the OAuth migration this sprint.",
+        "segment_id": 13,
+        "timestamp": 79.4
+      }
+    ],
+    "action_items": [
+      {
+        "task": "Benchmark the PostgreSQL session store latency and provide numbers",
+        "owner": null,
+        "deadline": "Friday",
+        "evidence": "I'll benchmark the PostgreSQL session store latency and have numbers by Friday.",
+        "segment_id": 10,
+        "timestamp": 60.62
+      },
+      {
+        "task": "Update the Grafana dashboard to show new metrics",
+        "owner": "Sam",
+        "deadline": null,
+        "evidence": "Yes, I'll take the Grafana dashboard.",
+        "segment_id": 11,
+        "timestamp": 66.5
+      }
+    ],
+    "model": "Groq / openai/gpt-oss-120b — 1549 est. tokens, under the 4500 limit",
+    "warnings": [],
+    "processing_seconds": 3.74
+  },
+  "grounding": {
+    "dropped_decisions": [],
+    "dropped_actions": [],
+    "downgraded_fields": []
+  }
+}
