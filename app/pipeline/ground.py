@@ -81,14 +81,27 @@ def find_evidence(evidence: str, segments: list[Segment]) -> Segment | None:
     if len(want) < MIN_EVIDENCE_WORDS:
         return None
 
+    # Whisper segments are acoustic chunks, not sentences: a long quote often
+    # runs across two of them, and each half alone falls under the bar. (Found
+    # on the 30-minute meeting, where two correct items were dropped this way.)
+    # So each segment is scored alone AND joined with the next one; a pair is
+    # anchored to whichever of its two segments holds more of the quote.
     best, best_score = None, 0.0
-    for seg in segments:
+    for i, seg in enumerate(segments):
         have = set(_content(seg.text))
-        if not have:
-            continue
-        score = sum(1 for w in want if w in have) / len(want)
-        if score > best_score:
-            best, best_score = seg, score
+        windows = [(seg, have)]
+        if i + 1 < len(segments):
+            windows.append((None, have | set(_content(segments[i + 1].text))))
+        for anchor, words in windows:
+            if not words:
+                continue
+            score = sum(1 for w in want if w in words) / len(want)
+            if anchor is None:
+                nxt = set(_content(segments[i + 1].text))
+                anchor = seg if sum(w in have for w in want) >= sum(w in nxt for w in want) \
+                    else segments[i + 1]
+            if score > best_score + 1e-9:
+                best, best_score = anchor, score
     return best if best_score >= EVIDENCE_OVERLAP else None
 
 
@@ -241,6 +254,45 @@ def _named_near(name: str, segments: list[Segment], seg: Segment) -> bool:
     return bool(toks) and any(t in set(_tokens(window)) for t in toks)
 
 
+def _named_request(a: ActionItem, utt, utterances, naming):
+    """
+    "Hannah, could you get the release notes ready by Monday?" names who the work
+    is for. On the 30-minute meeting the model gave the REQUESTER's voice label
+    as owner; Stage 4 correctly rejected that but then had nothing left. If the
+    evidence is a request addressed by name, about this same task, the person
+    named is the stated owner — UNLESS the reply came from a voice identified as
+    someone else ("Leo, can you check the restore?" answered by Grace, who takes
+    it). Returns (name, request sentence) or None.
+    """
+    from .naming import _REQUEST, _SENTENCE, _vocative
+    if utt is None or not utterances:
+        return None
+    want = _stems(a.task)
+    for sentence in _SENTENCE.split(utt.text.strip()):
+        name = _vocative(sentence, None)
+        if not name or not _REQUEST.search(sentence):
+            continue
+        if not want or len(want & _stems(sentence)) / len(want) < 0.5:
+            continue
+        idx = next((i for i, u in enumerate(utterances) if u is utt), None)
+        reply = next((u for u in utterances[idx + 1:] if u.speaker != utt.speaker),
+                     None) if idx is not None else None
+        # Redirected? The replying voice has evidence for a DIFFERENT name —
+        # bound or merely contested (a tie leaves it unbound but still says
+        # "this voice may be someone else"). Then the request names the wrong
+        # person, and we assign nobody rather than guess.
+        if naming and reply:
+            bound = naming.name_for(reply.speaker)
+            if bound:
+                if bound.lower() != name.lower():
+                    return None              # a voice known to be someone else
+            elif {n.lower() for n in naming.candidates.get(reply.speaker, set())} \
+                    - {name.lower()}:
+                return None                  # unnamed, but possibly someone else
+        return name, sentence
+    return None
+
+
 def _check_owner(a: ActionItem, seg: Segment, segments, utterances, naming,
                  result: "GroundingResult") -> None:
     if not a.owner:
@@ -269,6 +321,13 @@ def _check_owner(a: ActionItem, seg: Segment, segments, utterances, naming,
                 f"— set to unspecified")
             a.owner = None
             return
+        if who != a.owner or not _FIRST_PERSON.search(a.evidence):
+            asked = _named_request(a, utt, utterances, naming)
+            if asked:
+                a.owner, a.owner_source = asked[0], "stated"
+                a.owner_evidence = (f'asked by name at {_clock(seg.start)} '
+                                    f'("{asked[1][:80]}")')
+                return
         if who == a.owner and not _FIRST_PERSON.search(a.evidence):
             result.downgraded.append(
                 f'owner {a.owner!r} for "{a.task[:40]}" — {a.owner} said it, but '

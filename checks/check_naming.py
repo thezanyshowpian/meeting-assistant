@@ -324,6 +324,59 @@ def main() -> int:
         assert not infer_names(u2, GLOSSARY).suspects
         return "0 suspects in both"
 
+    print("\nOWNER FROM A NAMED REQUEST (30-minute meeting)")
+    REQ = [
+        ("Speaker 1", "Hannah, where does that leave the release?"),
+        ("Speaker 2", "We can make the twenty seventh if the fix lands this week."),
+        ("Speaker 1", "Grace, how is the hiring pipeline looking?"),
+        ("Speaker 3", "Better than last month, five strong candidates."),
+        ("Speaker 1", "Hannah, could you get the release notes ready by next Monday?"),
+        ("Speaker 2", "Sure, I'll get those done."),
+        ("Speaker 1", "Leo, can you check how long a full backup restore takes?"),
+        ("Speaker 3", "Actually, I can take that one. I'll run the restore test on Thursday."),
+    ]
+    rsegs, rutts = meeting(REQ)
+    rnaming = infer_names(rutts, GLOSSARY)
+
+    @check("model gave the REQUESTER's label -> owner is the person asked (stated)")
+    def _():
+        rec = MeetingRecord(action_items=[ActionItem(
+            task="Get the release notes ready", owner="Speaker 1", deadline="next Monday",
+            evidence="Hannah, could you get the release notes ready by next Monday?")])
+        ground(rec, rsegs, utterances=rutts, naming=rnaming)
+        a = rec.action_items[0]
+        assert a.owner == "Hannah" and a.owner_source == "stated", (a.owner, a.owner_source)
+        return a.owner_evidence[:90]
+
+    @check("...but a request REDIRECTED to another named voice gives no owner")
+    def _():
+        # Speaker 3 answered to "Grace" earlier and now takes Leo's task: its
+        # evidence is a TIE (Grace 1, Leo 1), so it is unnamed — but it is still
+        # known to possibly be someone other than Leo.
+        assert {"Grace", "Leo"} <= rnaming.candidates.get("Speaker 3", set())
+        rec = MeetingRecord(action_items=[ActionItem(
+            task="Check how long a full backup restore takes", owner="Speaker 3",
+            evidence="Leo, can you check how long a full backup restore takes?")])
+        res = ground(rec, rsegs, utterances=rutts, naming=rnaming)
+        assert rec.action_items[0].owner is None, rec.action_items[0].owner
+        return "not Leo, not Grace-by-guess: unspecified"
+
+    @check("...while a voice BOUND to the asked name is trusted despite a stray vote")
+    def _():
+        # Grace's voice has one stray vote for "Leo" (the redirect) but is bound
+        # to Grace; "Grace, can you schedule…" must still give Grace.
+        req2 = REQ + [("Speaker 1", "Grace, can you schedule the interviews before the end of the month?"),
+                      ("Speaker 3", "Yes, I'll schedule them.")]
+        s2, u2 = meeting(req2)
+        n2 = infer_names(u2, GLOSSARY)
+        assert n2.name_for("Speaker 3") == "Grace", n2.to_dict()
+        rec = MeetingRecord(action_items=[ActionItem(
+            task="Schedule the interviews", owner="Speaker 1",
+            evidence="Grace, can you schedule the interviews before the end of the month?")])
+        ground(rec, s2, utterances=u2, naming=n2)
+        assert rec.action_items[0].owner == "Grace", rec.action_items[0].owner
+        return "Grace (stated)"
+
     passed = sum(1 for s, _, _ in RESULTS if s == "PASS")
     failed = sum(1 for s, _, _ in RESULTS if s == "FAIL")
     print("\n" + "=" * 70)

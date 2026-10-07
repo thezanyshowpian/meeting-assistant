@@ -198,6 +198,8 @@ class NamingResult:
     conflicts: list[str] = field(default_factory=list)
     excluded: dict[str, set[str]] = field(default_factory=dict)
     suspects: list[SuspectedMiss] = field(default_factory=list)
+    # every name each voice has ANY evidence for, bound or not
+    candidates: dict[str, set[str]] = field(default_factory=dict)
 
     def is_suspect(self, utterance) -> SuspectedMiss | None:
         """Is this utterance's voice label contradicted by the conversation?"""
@@ -299,7 +301,8 @@ def infer_names(utterances: list[Utterance],
                     reply=nxt.text, reply_at=nxt.start, weight=W_ADDRESSED))
 
     result = NamingResult(excluded={k: set(v) for k, v in excluded.items()},
-                          suspects=_suspected_misses(utterances, glossary))
+                          suspects=_suspected_misses(utterances, glossary),
+                          candidates={k: set(v) for k, v in votes.items()})
     candidates: dict[str, NameBinding] = {}
     for speaker, by_name in votes.items():
         scored = {}

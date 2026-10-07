@@ -33,11 +33,12 @@ sys.path.insert(0, HERE)
 from app.pipeline.audio import decode  # noqa: E402
 from app.pipeline.diarize import (DEFAULT_THRESHOLD, EcapaEmbedder, label,  # noqa: E402
                                   prepare)
-from app.pipeline.transcribe import Stage1Transcriber  # noqa: E402
+from eval.cache import CachedTranscriber  # noqa: E402
 from eval.der import compute_der, load_rttm  # noqa: E402
 
 DATA = os.path.join(HERE, "data")
 TUNE, TEST = "sample_meeting", "heldout_meeting"
+LONG = "long_meeting"
 THRESHOLDS = [round(0.30 + 0.05 * i, 2) for i in range(15)]      # 0.30 … 1.00
 PLATEAU_PP = 0.005
 
@@ -65,7 +66,7 @@ def main() -> int:
     print("=" * 74)
     print("DIARIZATION THRESHOLD — tune on one meeting, report on another")
     print("=" * 74)
-    transcriber, embedder = Stage1Transcriber(), EcapaEmbedder()
+    transcriber, embedder = CachedTranscriber(), EcapaEmbedder()
     tune_prep, tune_ref, tune_n = load(TUNE, transcriber, embedder)
     test_prep, test_ref, test_n = load(TEST, transcriber, embedder)
 
@@ -103,8 +104,23 @@ def main() -> int:
     print(f"  known speaker count: tune DER {known_tune.der:.1%} | "
           f"test DER {known_test.der:.1%}")
     print(f"  test breakdown at chosen: {test_der}")
+
+    # The 30-minute, 6-speaker meeting: the case that broke 0.65.
+    if os.path.exists(os.path.join(DATA, f"{LONG}.wav")):
+        long_prep, long_ref, long_n = load(LONG, transcriber, embedder)
+        print(f"\n  {LONG} ({long_n} speakers), same sweep:")
+        print(f"  {'threshold':>9} | {'SAMPLE':>7} | {'HELDOUT':>7} | {'LONG':>7} {'spk':>4}")
+        for t_, da, na, db, nb in rows:
+            r = label(long_prep, threshold=t_)
+            dl = compute_der(long_ref, r.hypothesis())
+            mark = "  <- default" if abs(t_ - DEFAULT_THRESHOLD) < 1e-9 else ""
+            print(f"  {t_:>9.2f} | {da.der:>6.1%} | {db.der:>6.1%} | {dl.der:>6.1%} "
+                  f"{r.num_speakers:>4}{mark}")
     if abs(th - DEFAULT_THRESHOLD) > 1e-9:
-        print(f"\n  -> set DEFAULT_THRESHOLD = {th:.2f} in app/pipeline/diarize.py")
+        print(f"\n  note: the sample-only plateau centre is {th:.2f}; the default is "
+              f"{DEFAULT_THRESHOLD:.2f} because the 30-minute meeting showed merges cost "
+              f"more than splits (see the comment in app/pipeline/diarize.py). Check "
+              f"that the default sits inside the sample plateau above.")
     print("=" * 74)
     return 0
 

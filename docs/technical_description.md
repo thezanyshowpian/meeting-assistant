@@ -88,7 +88,7 @@ appearance.
    - Average-linkage agglomerative clustering on cosine distance.
    - Implemented with the Lance–Williams update. A test checks it is identical
      to brute-force average linkage.
-   - Stops at distance threshold **0.65**, or at a known speaker count if given.
+   - Stops at distance threshold **0.60**, or at a known speaker count if given.
 4. **Assign the short chunks.**
    - Chunks of 0.25–0.6 s go to the nearest cluster centroid.
    - Shorter fragments inherit the label of a neighbouring chunk.
@@ -102,6 +102,28 @@ appearance.
 - Result there: 4/4 speakers, DER 4.7%, zero confusion.
 - The held-out meeting's own best threshold (0.50) invents a fifth speaker on the
   tuning meeting. That is why we take the plateau centre, not either minimum.
+
+**Revised on a 30-minute meeting.** At 0.65 a 6-speaker, 27-minute meeting
+scored DER 39.7% and found 5 of 6 speakers. A diagnosis script
+(`eval/diagnose_diarization.py`) separated the possible causes:
+
+- **Chunks were fine:** only 3% contained two speakers, so segmentation wasn't
+  the problem.
+- **Two voices were close:** they sat only 0.52 apart in embedding space, while
+  each speaker's own spread is about 0.13. They were separable, but under the
+  threshold, so they merged.
+
+At **0.60** the long meeting scores DER 6.3%, and the short meetings are
+unchanged (8.0%, 4.7%): 0.60 sits inside the original plateau.
+
+The deciding argument is asymmetric cost:
+
+- a wrong **merge** puts two people under one label, and can attach a name to
+  the wrong person;
+- an extra **split** only leaves one label unnamed.
+
+So when in doubt, split. The long meeting gets 7 labels for 6 people, and zero
+wrong names.
 
 **Why a threshold is not portable.** With a deliberately blurrier stand-in
 embedder, the same audio gives 2 speakers at 0.70 and 3 at 0.50. A threshold
@@ -265,6 +287,17 @@ Defences against invention:
      by Stage 1.6's rules.
 5. **Stage 4 checks all of it.**
 
+**Built to survive long inputs.** On the 27-minute meeting the local model first
+copied 111 transcript lines into the minutes. That ran it out of room, and it
+returned empty decision and action lists, with no error. Four changes followed:
+
+1. **Key order.** The JSON asks for decisions and action items *before* minutes,
+   so if the model runs out of room it loses the minutes, not the decisions.
+2. **Short minutes.** At most 12 points, in the model's own words.
+3. **Bounded generation.** At most 4,096 tokens, and up to 30 minutes per local
+   call. A timeout is reported as a timeout, not as "unreachable".
+4. **A warning.** A long meeting that yields no decisions and no tasks says so.
+
 **Backend routing by size.**
 
 - Groq's free tier is 6,000 tokens per minute, and a 30-minute meeting is ~6,800
@@ -331,6 +364,7 @@ is listed.
 | a name | that name's voice (per Stage 1.6) spoke the evidence | `inferred` |
 | a speaker label | that voice spoke the evidence, **in the first person**, and the line is not flagged by the cross-check | `speaker` |
 | a speaker label on a **flagged** reply | the reply accepts a request about the same task that named someone | `stated` (that name) |
+| a rejected speaker label, where the quote is a request naming someone ("Hannah, could you…") | the reply did not come from a voice known to be someone else | `stated` (that name) |
 | anything else | — | downgraded to `unspecified` |
 
 Then, if a `speaker` owner's voice has a name binding, it is shown as that name,
@@ -396,10 +430,11 @@ Markdown (human-readable) + JSON (machine-readable), from the same object
 | :-- | --: | :-- | :-- |
 | `check_stage1.py` | 14 | Whisper | validation layers, decode fallbacks, soft warnings, output contract |
 | `check_stage2.py` | 29 | none | all gates, phonetics, off-glossary policy, veto, edit application, regressions |
-| `check_stage3.py` | 21 | none | evidence lookup, fabricated quotes, invented owners/deadlines, graded response, short quotes, duplicate merging |
+| `check_stage3.py` | 22 | none | evidence lookup, fabricated quotes, invented owners/deadlines, graded response, short quotes, quotes across segments, duplicate merging |
 | `check_diarization.py` | 12 | none | clustering maths vs brute force, pause splitting, short chunks, threshold relativity |
-| `check_naming.py` | 25 | none | name evidence, conflicts, speaker split, voice-aware owners, the cross-check |
-| `eval/evaluate.py` | 25 / 19 | all | WER, DER, names, traps, error injection, negative control (sample / held-out) |
+| `check_naming.py` | 28 | none | name evidence, conflicts, speaker split, voice-aware owners, the cross-check, owners from named requests |
+| `eval/evaluate.py` | 25 / 19 / 40 | all | WER, DER, names, traps, owners, deadlines, error injection, negative control (sample / held-out / long) |
+| `eval/diagnose_diarization.py` | — | ECAPA | segmentation purity, voice separability, threshold sweep |
 | `eval/stage3_trials.py` | 9 × N | Stage 3 | backend comparison as rates over repeated runs |
 
 The harnesses that guard faithfulness need **no model**. That follows from the
@@ -408,28 +443,14 @@ model output.
 
 ---
 
-## 10. Scope: what we deliberately did not build
+## 10. Deliberate scope decisions
 
-Each item below came up during design. It was left out because it needs either
-**data we don't have** or **days of work that can't be validated by the
-deadline**. Building something we can't measure would contradict the rest of
-this document.
+Three extensions were designed but deliberately left out. Each one either
+needs data we don't have, or can't be measured properly in the time available,
+and we didn't want to ship anything we couldn't measure.
 
-Smaller extensions that *did* fit were built:
-
-- uploading a custom glossary;
-- a known speaker count;
-- playing back the recording at the moment each decision or task was said;
-- a warning before a transcript overflows the local model's context.
-
-| Not built | Why it's out of scope now | How we would do it |
+| Extension | Why it's deferred | Design |
 | :-- | :-- | :-- |
-| **Evaluation on real human meetings** | Our two fixtures and the 30-minute meeting are text-to-speech: clean, no crosstalk, no accents, no overlap. Real meetings will score worse. An honest real-audio benchmark needs a public corpus with reference transcripts *and* speaker timelines, and a day of data handling before scoring starts. | The **AMI Meeting Corpus** (CC BY 4.0: 100 hours of real meetings, with word-level transcripts and speaker annotation) scored with the same WER and DER code. Report the gap to synthetic audio, rather than hide it. |
-| **Overlapping speech** | Our diarization gives each chunk exactly one speaker. When two people talk at once, one of them is lost. Detecting overlap needs a model trained for it, and it changes the data model (a word can then have two candidate speakers). | Optional **pyannote.audio 3.x** backend, with overlap detection, behind `HF_TOKEN`. Its models are gated, which breaks "clone and run without an account", so it would stay optional. Measure DER with overlap on AMI. |
-| **Acoustic re-verification of Stage 2 edits** | Designed (see the decision log). The naive version is circular: priming Whisper with the proposed term makes it "hear" that term. The valid version needs a decoy control on every edit and a real-audio test set to calibrate. On TTS audio, Stage 2 had no false positives to catch. | Re-decode each edited span twice, primed with the proposed term and with a phonetically distant decoy. Accept only if the term wins and the decoy loses. |
-| **Meetings longer than ~60 minutes** | The local context (16,384 tokens) holds about an hour. Beyond that we now *warn*, rather than silently truncate. A correct long-meeting design is map-reduce: summarise sections, then merge. That needs cross-section deduplication of decisions, and grounding against the right section. That is a new evaluation problem, not a parameter. | Section by speaker turns into ~15-minute windows; extract per window; merge with the same evidence grounding (Stage 4 already works per quote); evaluate on a 2-hour fixture. |
-| **Real-time / streaming transcription** | A different architecture: incremental ASR, diarization that revises earlier labels, and a record that updates as the meeting goes. Our verification assumes the whole transcript is available. | Whisper on sliding windows with local agreement; re-run Stages 3–4 per agenda item. |
-| **Speaker identity across meetings** | Recognising "Arjun" by voice in the next meeting means storing voiceprints. That is biometric data, and it needs consent and retention rules, not just code. Today names come only from what is said, and only for this meeting. | Opt-in enrolment, with embeddings stored per workspace and deletable. Match new speakers to enrolled centroids, still shown as *inferred*. |
-| **Non-English and code-switched meetings (e.g. Hinglish)** | Whisper handles many languages, but Stage 2's phonetic matching (Double Metaphone) is designed for English. The prompts, naming patterns ("X, can you…") and evaluation sets are English too. Supporting this properly means new matching, new patterns and a new test set. | A language-aware phonetic index (or transliteration first); localised naming patterns; a bilingual fixture. |
-| **Fine-tuning the speech model on domain vocabulary** | Needs hours of labelled in-domain audio and a GPU; we have neither. Stage 2 exists precisely to correct terminology without retraining. | Collect corrected transcripts from Stage 2 (with user consent) as training data; LoRA-tune Whisper; compare against glossary-only correction. |
-| **A human review loop** | Editing the record in the interface is easy. Doing it *usefully* means re-grounding edited items and keeping an audit trail of model output versus human edits, and that needs a review study to show it helps. | Editable table → re-run Stage 4 on edited rows → keep both versions in the JSON. |
+| **Acoustic re-verification of Stage 2 edits** | The naive version is circular: priming Whisper with a proposed term makes it "hear" that term. Stage 2 also produced no false positives to catch. | Re-decode each edited span twice, primed with the proposed term and with a phonetically distant decoy. Accept the edit only if the term wins and the decoy loses. |
+| **Overlapping speech** | Detecting two people speaking at once needs a dedicated model. The strongest open one (pyannote) is gated behind an account and token, which would break "clone and run". | An optional pyannote backend, enabled when `HF_TOKEN` is set. Each word could then carry more than one candidate speaker. |
+| **Meetings longer than ~60 minutes** | The local model's context holds about an hour. Beyond that, the pipeline **warns** instead of silently truncating. Merging per-section records correctly is a separate evaluation problem. | Split into ~15-minute windows, extract a record per window, and merge them. Stage 4 already grounds each quote independently. |

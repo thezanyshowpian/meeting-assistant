@@ -143,6 +143,10 @@ def main() -> int:
     ap.add_argument("--fixture", choices=["sample", "heldout", "long"], default="sample",
                     help="heldout: the 4-speaker meeting never used for tuning; "
                          "long: the ~30-minute, 6-speaker demo meeting")
+    ap.add_argument("--cache", action="store_true",
+                    help="reuse a cached Stage 1 transcript (data/.cache) if present")
+    ap.add_argument("--speakers", type=int, default=None,
+                    help="known number of speakers, as the app's sidebar allows")
     ap.add_argument("--out", help="also write meeting_record.{json,md} and "
                                   "transcripts.md to this directory")
     args = ap.parse_args()
@@ -165,7 +169,12 @@ def main() -> int:
     print("EVALUATION — sample meeting with known ground truth")
     print("=" * 72)
 
-    result = run_pipeline(args.audio, glossary=glossary,
+    transcriber = None
+    if args.cache:
+        from eval.cache import CachedTranscriber
+        transcriber = CachedTranscriber()
+    result = run_pipeline(args.audio, glossary=glossary, transcriber=transcriber,
+                          num_speakers=args.speakers,
                           use_llm_refinement=not args.no_llm,
                           progress=lambda s, m: print(f"  [{s}] {m}", flush=True))
     if not result.ok:

@@ -92,11 +92,11 @@ Used when diarization did not run.
 ```text
 You write meeting records from transcripts. You report ONLY what the transcript says. You never infer, assume, or fill gaps.
 
-Return JSON only:
+Return JSON only, with the keys in THIS order:
 {"summary": str,
- "minutes": [str],
  "decisions": [{"statement": str, "evidence": str}],
- "action_items": [{"task": str, "owner": str|null, "deadline": str|null, "evidence": str}]}
+ "action_items": [{"task": str, "owner": str|null, "deadline": str|null, "evidence": str}],
+ "minutes": [str]}
 
 Hard rules:
 - "evidence" MUST be a short quote copied from the transcript. If you cannot quote it, do not include the item.
@@ -104,6 +104,8 @@ Hard rules:
 - An ACTION ITEM is a concrete piece of work the meeting says must be done. It does NOT need an owner: "someone needs to document the rollback procedure" IS an action item, with owner null. A tentative idea ("maybe we could look into X") or a proposal the group declined or parked is NOT an action item.
 - "owner" is null unless the transcript names who will do it. Do NOT guess from who was speaking.
 - "deadline" is null unless the transcript states a time. Do NOT infer "soon", "next week", or "by Friday" unless those words were said.
+- "minutes": at most 12 short points, one per topic discussed, in your own words. Never copy transcript lines into the minutes.
+- Be complete: read to the END of the transcript. Long meetings usually contain many decisions and action items, spread across every topic.
 - Empty lists are correct and expected answers when nothing qualifies.
 ```
 

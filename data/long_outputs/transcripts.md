@@ -8,7 +8,7 @@ Good morning everyone, let's get started. We have a packed agenda today, so I wa
 
 # Speaker-labelled Transcript
 
-_5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65)). A name in brackets with '?' is inferred from evidence in the conversation; otherwise labels are anonymous._
+_7 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.60)). A name in brackets with '?' is inferred from evidence in the conversation; otherwise labels are anonymous._
 
 **Speaker 1** [0:00]: Good morning everyone, let's get started. We have a packed agenda today, so I want to keep us moving. First, the payments incident from last Tuesday, then a security review, the mobile release, our cloud costs, backups, and finally hiring and process. Before we begin, we have a guest from another team joining us today.
 
@@ -18,7 +18,7 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 3 (Ravi?)** [0:50]: Sure. So the first alert fired at 9.42 in the morning. Checkout requests started timing out, and within about 5 minutes the error rate on the payment service was above 30%. I acknowledged the page at 9.45 and started looking at the dashboards. The first thing I noticed was that the Kafka consumer lag on the payments topic was climbing very fast. It went from basically 0 to about 200,000 messages in under 10 minutes.
 
-**Speaker 1** [1:19]: Was that the consumers being slow, or was the producer suddenly sending a lot more traffic?
+**Speaker 4 (Hannah?)** [1:19]: Was that the consumers being slow, or was the producer suddenly sending a lot more traffic?
 
 **Speaker 3 (Ravi?)** [1:25]: Both. Actually. And that's what made it confusing. Traffic was higher than normal because of the marketing campaign that went out that morning. Roughly 3 times our usual peak. But the consumers were also slower than they should have been. Because each payment event triggers a call to the fraud check service. And that service was itself degraded. So we had more messages coming in and each one taking longer to process. And how long were we actually down?
 
@@ -26,11 +26,11 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 3 (Ravi?)** [1:56]: around. The full outage, meaning checkout was failing for most users, lasted 47 minutes. We had partial degradation for another 20 minutes after that while the backlog drained. In total about 1,200 transactions failed outright. And those customers saw an error page.
 
-**Speaker 4** [2:15]: And the duplicate charges? I saw a few support tickets about people being charged twice.
+**Speaker 5** [2:15]: And the duplicate charges? I saw a few support tickets about people being charged twice.
 
 **Speaker 3 (Ravi?)** [2:22]: Yes. That's the part I'm most worried about. When the consumers finally caught up. Some of the retried messages were processed twice. The payment webhook from our provider retries if it doesn't get a response within 10 seconds. And during the incident we were often slower than that. So the same payment confirmation arrived 2 or 3 times. And we didn't have any protection against processing it more than once. We found 86 customers who were charged twice. Support has refunded all of them already.
 
-**Speaker 5 (Grace?)** [2:54]: That's not great. Do we know why there was no dead application? I thought we had something for that.
+**Speaker 6 (Grace?)** [2:54]: That's not great. Do we know why there was no dead application? I thought we had something for that.
 
 **Speaker 3 (Ravi?)** [3:01]: We had dead application in the old monolith. When the payment service was split out last year, that logic didn't come along with it. Nobody noticed because under normal load the webhook never retries. It only showed up under exactly this kind of slowdown.
 
@@ -38,11 +38,11 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 3 (Ravi?)** [3:21]: immediate fix from the longer term work. The immediate fix is to add idempotency keys to the payment webhook handler. Every event from the provider already carries a unique event identifier. We store that identifier when we first process the event. And if we see it again we return success without processing it a second time. It's a small change. Maybe a couple of hundred lines including tests. But it completely removes the duplicate charge problem.
 
-**Speaker 4** [3:50]: Where would you store the keys? If it's in Redis with an expiry, we need to think about what happens if Redis evicts them under memory pressure. Which is exactly the situation we were in during the incident.
+**Speaker 5** [3:50]: Where would you store the keys? If it's in Redis with an expiry, we need to think about what happens if Redis evicts them under memory pressure. Which is exactly the situation we were in during the incident.
 
 **Speaker 3 (Ravi?)** [4:02]: Good point. I'd put them in PostgreSQL. In the same transaction that records the payment. That way the key and the payment are written together or not at all. And there's no eviction to worry about. The table will grow. But we can clean up keys older than 30 days with a nightly job.
 
-**Speaker 1** [4:20]: Does the mobile app need to change at all for this?
+**Speaker 4 (Hannah?)** [4:20]: Does the mobile app need to change at all for this?
 
 **Speaker 3 (Ravi?)** [4:23]: No. This is entirely on the server side. The app never talks to the webhook.
 
@@ -52,19 +52,21 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 3 (Ravi?)** [4:58]: Yes. We already validate the signature before anything else happens. And the key check would come after that. I'll write the idempotency patch myself. And I should have it in review by Wednesday.
 
-**Speaker 2 (Omar?)** [5:10]: Perfect. That's all I wanted to confirm.
+**Speaker 7** [5:10]: Perfect.
+
+**Speaker 2 (Omar?)** [5:12]: That's all I wanted to confirm.
 
 **Speaker 1** [5:14]: Good. Ravi, can you also write up the full incident postmortem by Friday, so we can share it with the wider engineering group?
 
 **Speaker 3 (Ravi?)** [5:21]: Yes. I'll have the postmortem in confluence by Friday. I'll include the timeline, the duplicate charge analysis, and the list of follow-up items.
 
-**Speaker 5 (Grace?)** [5:32]: One request for the postmortem. Could we include what the on-call experience was like? Ravi was alone for the first 20 minutes and I think that's worth discussing separately.
+**Speaker 6 (Grace?)** [5:32]: One request for the postmortem. Could we include what the on-call experience was like? Ravi was alone for the first 20 minutes and I think that's worth discussing separately.
 
 **Speaker 1** [5:43]: Agreed. That's a fair point. And it connects to something we'll talk about at the end under process. Let's move on to the security review. Over to you, since you're our guest.
 
 **Speaker 2 (Omar?)** [5:53]: Thanks. I have two things. The first is authentication for the new partner API. The current plan, as I understand it, is for the platform team to build our own token service, issuing and validating OAuth tokens ourselves. I want to push back on that fairly strongly. Token services look simple and they are not. Key rotation, revocation, clock skew, refresh token theft. There's a long list of things that go wrong, and every one of them becomes our problem forever.
 
-**Speaker 4** [6:21]: What's the alternative? We looked at buying something last year and the pricing was painful.
+**Speaker 5** [6:21]: What's the alternative? We looked at buying something last year and the pricing was painful.
 
 **Speaker 2 (Omar?)** [6:26]: The company already has an enterprise contract with Okta for employee login. I checked with procurement yesterday, and adding customer-facing machine-to-machine tokens to that contract is included up to 50,000 monthly active clients. We're nowhere near that. So the marginal cost for us is
 
@@ -72,11 +74,11 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 2 (Omar?)** [6:55]: the integration is mostly configuration plus validating tokens in the gateway. I'd estimate one to two weeks, and most of that is testing. I'm convinced.
 
-**Speaker 5 (Grace?)** [7:04]: Honestly, I never liked the idea of us owning cryptography code.
+**Speaker 6 (Grace?)** [7:04]: Honestly, I never liked the idea of us owning cryptography code.
 
 **Speaker 1** [7:08]: Does anyone want to argue for building our own? Now is the time.
 
-**Speaker 4** [7:13]: Not me. I only cared about the cost, and that's answered.
+**Speaker 5** [7:13]: Not me. I only cared about the cost, and that's answered.
 
 **Speaker 1** [7:17]: Then let's make it official. We are not going to build our own token service. We'll use Okta for the partner API tokens instead. That's decided.
 
@@ -84,7 +86,7 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 3 (Ravi?)** [7:44]: remember to do it. 90 days is fine for us. The services already reload credentials on restart, and we restart more often than that anyway.
 
-**Speaker 1** [7:54]: The mobile app doesn't use those internal tokens at all, right? Just checking it doesn't affect the release.
+**Speaker 4 (Hannah?)** [7:54]: The mobile app doesn't use those internal tokens at all, right? Just checking it doesn't affect the release.
 
 **Speaker 2 (Omar?)** [8:01]: Correct. These are only service -to -service tokens. The app uses user sessions, which are separate.
 
@@ -92,133 +94,149 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 2 (Omar?)** [8:15]: One last thing. We finished the penetration test on the new checkout flow last week. The report isn't final yet, but there is one medium severity finding in how the app handles expired sessions. I'll send the penetration test report by Thursday, with the details and a recommended fix.
 
-**Speaker 1** [8:31]: Thank you. That brings us neatly to the mobile release, because if there's a finding in checkout, I want to understand whether it blocks the release. Hannah, where does that leave the release? So, the current plan was to ship version 4.2 on the 20th. The build is on test flight and about 200 internal testers have been using it for a week. The feedback has been good overall. The main new feature, saved payment methods, is working well, and the crash rate in Sentry is at 0.8%, which is higher than I'd like but not alarming.
+**Speaker 1** [8:31]: Thank you. That brings us neatly to the mobile release, because if there's a finding in checkout, I want to understand whether it blocks the release. Hannah, where does that leave the release?
+
+**Speaker 4 (Hannah?)** [8:42]: So, the current plan was to ship version 4 .2 on the 20th. The build is on test flight and about 200 internal testers have been using it for a week. The feedback has been good overall. The main new feature, saved payment methods, is working well, and the crash rate in Sentry is at 0.8%, which is higher than I'd like but not alarming.
 
 **Speaker 2 (Omar?)** [9:03]: The session finding isn't exactly the same payment methods flow, unfortunately. If a session expires while the user is on the payment screen, the app keeps showing the same current details for a few seconds before it redirects to lock in. It's not a data leak to another user, but it's not the
 
-**Speaker 1** [9:20]: behavior we want either. That's fixable. It's a matter of checking the session state before rendering the screen rather than after. But it needs a new build, another round of testing, and then app store review, which has been taking three to four days lately. So realistically, can we still make the 20th? Honestly, no, not safely. If the fix goes in this week, testing takes us to the middle of next week, and with review time we'd be cutting it very close. I'd rather not ship a payments feature in a rush right after a payments incident.
+**Speaker 4 (Hannah?)** [9:20]: behavior we want either. That's fixable. It's a matter of checking the session state before rendering the screen rather than after. But it needs a new build, another round of testing, and then app store review, which has been taking three to four days lately.
+
+**Speaker 1** [9:34]: So realistically, can we still make the 20th?
+
+**Speaker 4 (Hannah?)** [9:37]: Honestly, no, not safely. If the fix goes in this week, testing takes us to the middle of next week, and with review time we'd be cutting it very close. I'd rather not ship a payments feature in a rush right after a payments incident.
 
 **Speaker 3 (Ravi?)** [9:52]: I agree with that. The last thing we need is a second payments problem in the same month.
 
-**Speaker 1** [9:58]: Okay, let's move the release. We're delaying the mobile release to the 27th. That gives us a week of buffer. Hannah, does the 27th work for you and the team? Yes, the 27th works. I'll fix the session check myself, and I'll also fix the login crash this week, since that's the biggest single source of crashes in Sentry right now. Out of curiosity,
+**Speaker 1** [9:58]: Okay, let's move the release. We're delaying the mobile release to the 27th. That gives us a week of buffer. Hannah, does the 27th work for you and the team?
 
-**Speaker 4** [10:21]: what is the login crash?
+**Speaker 4 (Hannah?)** [10:08]: Yes, the 27th works. I'll fix the session check myself, and I'll also fix the login crash this week, since that's the biggest single source of crashes in Sentry right now. Out of curiosity,
 
-**Speaker 1** [10:23]: It's an old one. On some older Android phones, if the user rotates the screen while the login request is in flight, the app tries to update a view that no longer exists. It's about 40% of all our crashes, so fixing it should bring the crash rate down to something like 0.5%.
+**Speaker 5** [10:21]: what is the login crash?
 
-**Speaker 5 (Grace?)** [10:40]: While we're talking about the app, I've been wondering whether we should rewrite the mobile app in Flutter. Right now we maintain two separate code bases, one for iOS and one for Android, and every feature costs us twice.
+**Speaker 4 (Hannah?)** [10:23]: It's an old one. On some older Android phones, if the user rotates the screen while the login request is in flight, the app tries to update a view that no longer exists. It's about 40% of all our crashes, so fixing it should bring the crash rate down to something like 0.5%.
 
-**Speaker 1** [10:55]: I've thought about it too, and it's tempting, but a rewrite is at least two quarters of work for the whole mobile team, and we'd be shipping almost nothing new during that time. Let's park that one. It's a real conversation, but not this quarter, and definitely not in the same month as a delayed release. If someone wants to write up the trade-offs properly, we can revisit it at planning.
+**Speaker 6 (Grace?)** [10:40]: While we're talking about the app, I've been wondering whether we should rewrite the mobile app in Flutter. Right now we maintain two separate code bases, one for iOS and one for Android, and every feature costs us twice.
 
-**Speaker 5 (Grace?)** [11:17]: That's fair. I just wanted it on the radar.
+**Speaker 4 (Hannah?)** [10:55]: I've thought about it too, and it's tempting, but a rewrite is at least two quarters of work for the whole mobile team, and we'd be shipping almost nothing new during that time.
 
-**Speaker 1** [11:19]: It is now. Hannah, could you get the release notes ready by next Monday, so marketing has time to prepare the announcement? Sure, I'll get those done. I'll make sure they mention the saved payment methods and the crash fixes. Thank you. Before we get to costs, I want to spend a few minutes on customer impact, because the incident wasn't only an engineering event, our support team had a very long week, and I'd like everyone to understand what that looked like from their side.
+**Speaker 1** [11:04]: Let's park that one. It's a real conversation, but not this quarter, and definitely not in the same month as a delayed release. If someone wants to write up the trade-offs properly, we can revisit it at planning.
 
-**Speaker 5 (Grace?)** [11:48]: I spoke with the support led on Monday. They received just over 900 tickets in the three days after the incident, compared with about 250 in a normal three-day period. Most were customers asking whether their payment went through, and the most stressful ones were the duplicate charges, because those customers were understandably angry.
+**Speaker 6 (Grace?)** [11:17]: That's fair. I just wanted it on the radar.
+
+**Speaker 1** [11:19]: It is now. Hannah, could you get the release notes ready by next Monday, so marketing has time to prepare the announcement?
+
+**Speaker 4 (Hannah?)** [11:27]: Sure, I'll get those done. I'll make sure they mention the saved payment methods and the crash fixes.
+
+**Speaker 1** [11:34]: Thank you. Before we get to costs, I want to spend a few minutes on customer impact, because the incident wasn't only an engineering event, our support team had a very long week, and I'd like everyone to understand what that looked like from their side.
+
+**Speaker 6 (Grace?)** [11:48]: I spoke with the support led on Monday. They received just over 900 tickets in the three days after the incident, compared with about 250 in a normal three-day period. Most were customers asking whether their payment went through, and the most stressful ones were the duplicate charges, because those customers were understandably angry.
 
 **Speaker 3 (Ravi?)** [12:09]: Did support have what they needed to answer the duplicate charge questions? I remember they were asking us for transaction lists during the incident itself.
 
-**Speaker 5 (Grace?)** [12:19]: That was the main complaint. For the first day, they had no way to check whether a specific customer had been charged twice, so every one of those tickets was escalated to engineering. Once Ravi shared the list of affected customers, they could answer directly, and the response time dropped from about 6 hours to under 1 hour.
+**Speaker 6 (Grace?)** [12:19]: That was the main complaint. For the first day, they had no way to check whether a specific customer had been charged twice, so every one of those tickets was escalated to engineering. Once Ravi shared the list of affected customers, they could answer directly, and the response time dropped from about 6 hours to under 1 hour.
 
-**Speaker 1** [12:39]: Is there something we could build so that support can look up payment events themselves next time? On mobile we had a similar problem with subscription renewals last year.
+**Speaker 4 (Hannah?)** [12:39]: Is there something we could build so that support can look up payment events themselves next time? On mobile we had a similar problem with subscription renewals last year.
 
 **Speaker 3 (Ravi?)** [12:49]: There's an internal admin tool that shows payments for a customer, but it doesn't show the raw webhook events, which is what you'd need to spot a duplicate. Adding that view is not a lot of work, but it's not something I'd squeeze in before the idempotency fix.
 
 **Speaker 1** [13:06]: Agreed. The fix comes first. Let's capture the support tooling gap in the postmortem as a follow-up rather than commit to it today. What about the public side? How did the status page work during the incident?
 
-**Speaker 4** [13:18]: Not well. Honestly. The status page was updated 25 minutes after the first alert, and only because someone in support asked whether we were going to say anything. By then customers had been seeing errors for a long time.
+**Speaker 5** [13:18]: Not well. Honestly. The status page was updated 25 minutes after the first alert, and only because someone in support asked whether we were going to say anything. By then customers had been seeing errors for a long time.
 
-**Speaker 5 (Grace?)** [13:32]: Which connects to the on-call problem again. Ravi was the only person who could have updated it, and he was busy actually fixing the problem.
+**Speaker 6 (Grace?)** [13:32]: Which connects to the on-call problem again. Ravi was the only person who could have updated it, and he was busy actually fixing the problem.
 
 **Speaker 1** [13:41]: We'll come back to that under process, because I think the answer is the same for both. What about the numbers on the business side? Do we know what the incident cost us?
 
 **Speaker 3 (Ravi?)** [13:50]: Finance gave me a rough estimate yesterday. The failed transactions during the outage were worth about $38,000. Some of those customers came back and paid later the same day. So the real loss is probably closer to $15,000. The refunds for the duplicate charges were about $4,200. But that money was never really ours anyway.
 
-**Speaker 1** [14:13]: And we probably lost some trust, which doesn't show up in that number. Exactly. That's the part I care about most. Payments are the one place where customers have no patience for mistakes. And they're right not to. Okay. I think that's a fair picture. Let's move on to cloud costs. Because finance has started asking questions there as well. Leo. How bad is the cloud bill this month?
+**Speaker 4 (Hannah?)** [14:13]: And we probably lost some trust, which doesn't show up in that number.
 
-**Speaker 4** [14:37]: It's not good. Our total cloud spend last month was $61,000. Up from about $48,000 three months ago. The biggest single jump is observability. Our Datadog bill alone is now $14,000 a month. And it was around $10,000 at the start of the quarter.
+**Speaker 1** [14:18]: Exactly. That's the part I care about most. Payments are the one place where customers have no patience for mistakes. And they're right not to. Okay. I think that's a fair picture. Let's move on to cloud costs. Because finance has started asking questions there as well. Leo. How bad is the cloud bill this month?
+
+**Speaker 5** [14:37]: It's not good. Our total cloud spend last month was $61,000. Up from about $48,000 three months ago. The biggest single jump is observability. Our Datadog bill alone is now $14,000 a month. And it was around $10,000 at the start of the quarter.
 
 **Speaker 3 (Ravi?)** [14:55]: What's driving the Datadog growth? We haven't added that many services.
 
-**Speaker 4** [15:00]: Logs. Almost entirely. When I broke it down, debug level logs are about 60% of our total log volume. Most of them come from three services. And a lot of it is the payment service logging every single Kafka message it processes. Nobody reads those logs unless something has gone wrong. And when something goes wrong we usually need the last hour. Not the last 30 days.
+**Speaker 5** [15:00]: Logs. Almost entirely. When I broke it down, debug level logs are about 60% of our total log volume. Most of them come from three services. And a lot of it is the payment service logging every single Kafka message it processes. Nobody reads those logs unless something has gone wrong. And when something goes wrong we usually need the last hour. Not the last 30 days.
 
-**Speaker 5 (Grace?)** [15:24]: Can't we just turn debug logging off in production?
+**Speaker 6 (Grace?)** [15:24]: Can't we just turn debug logging off in production?
 
-**Speaker 4** [15:27]: We could. But then during an incident like last week's. We'd have nothing to look at. Ravi actually used those debug logs to find the duplicate charges. So I don't want to throw them away. I want to stop paying premium prices to keep them hot.
+**Speaker 5** [15:27]: We could. But then during an incident like last week's. We'd have nothing to look at. Ravi actually used those debug logs to find the duplicate charges. So I don't want to throw them away. I want to stop paying premium prices to keep them hot.
 
 **Speaker 1** [15:42]: What are the options, concretely?
 
-**Speaker 4** [15:45]: The cleanest option is to keep debug logs in Datadog for only three days. And archive everything older than that to cold storage in our own cloud account. Cold storage is about 2% of the cost per gigabyte. If we ever need older logs, we can rehydrate a specific time window. Which takes maybe an hour. I've tested it on one service and it works.
+**Speaker 5** [15:45]: The cleanest option is to keep debug logs in Datadog for only three days. And archive everything older than that to cold storage in our own cloud account. Cold storage is about 2% of the cost per gigabyte. If we ever need older logs, we can rehydrate a specific time window. Which takes maybe an hour. I've tested it on one service and it works.
 
-**Speaker 1** [16:06]: Would that affect the mobile crash logs? We sometimes look back a couple of weeks when a crash is rare. No.
+**Speaker 4 (Hannah?)** [16:06]: Would that affect the mobile crash logs? We sometimes look back a couple of weeks when a crash is rare. No.
 
-**Speaker 4** [16:13]: Crash reports go to Sentry. Not Datadog. This is only server-side debug logs. Info and error level logs would stay exactly as they are.
+**Speaker 5** [16:13]: Crash reports go to Sentry. Not Datadog. This is only server-side debug logs. Info and error level logs would stay exactly as they are.
 
 **Speaker 3 (Ravi?)** [16:23]: Three days is enough for most incidents. Last week we only needed the previous two hours.
 
 **Speaker 1** [16:29]: Leo. What would the cold tier option save us per month? Roughly?
 
-**Speaker 4** [16:33]: Roughly $6,000 a month. So close to half of the Datadog bill. The one-time setup is small. A few hours of configuration.
+**Speaker 5** [16:33]: Roughly $6,000 a month. So close to half of the Datadog bill. The one-time setup is small. A few hours of configuration.
 
 **Speaker 1** [16:42]: Then I don't see a reason to wait. We're moving debug logs older than three days to the cold storage tier. That's decided. Separately. I'll talk to finance about the Datadog contract myself. Because I think our committed spend level is wrong. And they're the ones who negotiated it.
 
-**Speaker 5 (Grace?)** [16:59]: Should we be worried about other things growing the same way without anyone noticing? This only came up because finance asked.
+**Speaker 6 (Grace?)** [16:59]: Should we be worried about other things growing the same way without anyone noticing? This only came up because finance asked.
 
-**Speaker 4** [17:06]: That's exactly my concern. Right now we have no alerting on spend at all. We find out at the end of the month when the invoice arrives. I'll set up budget alerts in Terraform. So that each team gets a notification when its projected monthly spend goes more than 20% over its budget. Then the next surprise reaches us in days instead of weeks.
+**Speaker 5** [17:06]: That's exactly my concern. Right now we have no alerting on spend at all. We find out at the end of the month when the invoice arrives. I'll set up budget alerts in Terraform. So that each team gets a notification when its projected monthly spend goes more than 20% over its budget. Then the next surprise reaches us in days instead of weeks.
 
 **Speaker 3 (Ravi?)** [17:28]: Will the alerts be per service or per team? Per service would be very noisy.
 
-**Speaker 4** [17:33]: Per team. With a breakdown by service in the alert itself. So you can see which service caused it without having 20 separate alerts.
+**Speaker 5** [17:33]: Per team. With a breakdown by service in the alert itself. So you can see which service caused it without having 20 separate alerts.
 
-**Speaker 1** [17:42]: That sounds useful. Can mobile be included, even though our costs are tiny compared to the backend?
+**Speaker 4 (Hannah?)** [17:42]: That sounds useful. Can mobile be included, even though our costs are tiny compared to the backend?
 
-**Speaker 4** [17:48]: Sure. Every team gets one. It's the same configuration either way.
+**Speaker 5** [17:48]: Sure. Every team gets one. It's the same configuration either way.
 
 **Speaker 1** [17:53]: Good. What else is in the build that we should know about?
 
-**Speaker 4** [17:56]: The other big item is the Kubernetes clusters. We run three staging clusters, and as far as I can tell only one of them is used regularly. The other two were created for projects that finished months ago, and they cost about $4,000 a month between them. The problem is that I'm not completely sure nobody depends on them. There might be some forgotten test environment or a demo somebody uses once a quarter.
+**Speaker 5** [17:56]: The other big item is the Kubernetes clusters. We run three staging clusters, and as far as I can tell only one of them is used regularly. The other two were created for projects that finished months ago, and they cost about $4,000 a month between them. The problem is that I'm not completely sure nobody depends on them. There might be some forgotten test environment or a demo somebody uses once a quarter.
 
-**Speaker 5 (Grace?)** [18:20]: So we can't just delete them?
+**Speaker 6 (Grace?)** [18:20]: So we can't just delete them?
 
-**Speaker 4** [18:22]: Not without checking first. Someone needs to audit the unused staging clusters and confirm with each team that nothing important is running there before we shut them down.
+**Speaker 5** [18:22]: Not without checking first. Someone needs to audit the unused staging clusters and confirm with each team that nothing important is running there before we shut them down.
 
 **Speaker 3 (Ravi?)** [18:33]: I'd guess at least one of them still has the old load testing setup, but I'm not sure anyone uses it.
 
 **Speaker 1** [18:40]: Let's make sure that gets done properly rather than quickly. I don't want to delete something on a Friday and find out on Monday that a customer demo depended on it.
 
-**Speaker 4** [18:49]: Agreed. One more thought. And this is really just an idea, not a proposal. Maybe someday we could look into self-hosting Grafana for our dashboards instead of paying for the hosted version. It's not urgent and I haven't done any analysis. So please don't treat it as a plan.
+**Speaker 5** [18:49]: Agreed. One more thought. And this is really just an idea, not a proposal. Maybe someday we could look into self-hosting Grafana for our dashboards instead of paying for the hosted version. It's not urgent and I haven't done any analysis. So please don't treat it as a plan.
 
 **Speaker 1** [19:06]: Note it as an idea. If the numbers ever look compelling, bring it back with an analysis. Okay, let's move on to backups, which is a short one but important.
 
-**Speaker 5 (Grace?)** [19:16]: Is this about the restore test that was supposed to happen last quarter?
+**Speaker 6 (Grace?)** [19:16]: Is this about the restore test that was supposed to happen last quarter?
 
 **Speaker 1** [19:21]: Exactly that. We take nightly backups of the main PostgreSQL database, and we've never actually tested how long a full restore takes. If we lost the primary database tomorrow, I genuinely don't know whether we'd be back in one hour or one day. That's not acceptable for a payments company. Leo, can you check how long a full backup restore actually takes?
 
-**Speaker 5 (Grace?)** [19:43]: Actually, I can take that one. Leo has more than enough on his plate with the cost work, and I've been meaning to learn the backup tooling properly anyway. I'll run a full restore test on Thursday, into an isolated environment, and I'll report how long each step takes.
+**Speaker 6 (Grace?)** [19:43]: Actually, I can take that one. Leo has more than enough on his plate with the cost work, and I've been meaning to learn the backup tooling properly anyway. I'll run a full restore test on Thursday, into an isolated environment, and I'll report how long each step takes.
 
-**Speaker 4** [19:59]: Thanks. I appreciate that. The runbook is a bit out of date, so ping me if any of the steps don't make sense. The backup bucket permissions changed in the summer.
+**Speaker 5** [19:59]: Thanks. I appreciate that. The runbook is a bit out of date, so ping me if any of the steps don't make sense. The backup bucket permissions changed in the summer.
 
 **Speaker 3 (Ravi?)** [20:10]: If you are restoring into an isolated environment, make sure the restored database can't send any emails or webhooks. We had a scare once where a restored copy started emailing real customers.
 
-**Speaker 5 (Grace?)** [20:22]: Good to know. I'll disable all outbound traffic from the restore environment before starting.
+**Speaker 6 (Grace?)** [20:22]: Good to know. I'll disable all outbound traffic from the restore environment before starting.
 
 **Speaker 1** [20:28]: Thank you, both. I'd like the restore time written down somewhere permanent once we have it, because the next question will be what our recovery time objective should be, and we can't answer that without a real number.
 
 **Speaker 2 (Omar?)** [20:41]: From the security side, please make sure the restore environment has torn down afterwards. Restored copies of production data lying around are one of the most common findings in audits.
 
-**Speaker 5 (Grace?)** [20:51]: Understood. I'll delete it the same day.
+**Speaker 6 (Grace?)** [20:51]: Understood. I'll delete it the same day.
 
 **Speaker 1** [20:54]: Let's turn to hiring and process. Grace, how is the hiring pipeline looking for the back-end roles?
 
-**Speaker 5 (Grace?)** [21:00]: Better than last month. We have two open back-end positions. Recruiting has passed us 11 candidates in total, and after the initial screens, five of them look strong enough for the technical interview. Two of those five have competing offers, so timing matters. If we wait three or four weeks, we'll probably lose them. Um?
+**Speaker 6 (Grace?)** [21:00]: Better than last month. We have two open back-end positions. Recruiting has passed us 11 candidates in total, and after the initial screens, five of them look strong enough for the technical interview. Two of those five have competing offers, so timing matters. If we wait three or four weeks, we'll probably lose them. Um?
 
 **Speaker 3 (Ravi?)** [21:21]: Who's doing the technical interviews? Last round, the same three people did all of them, and it took a lot of time out of the sprint.
 
-**Speaker 5 (Grace?)** [21:29]: That's part of what I wanted to raise. I'd like to spread the interviews across more people this time, so nobody does more than two in a week. We have six people who've been trained on the interview format, and that's enough if we plan ahead.
+**Speaker 6 (Grace?)** [21:29]: That's part of what I wanted to raise. I'd like to spread the interviews across more people this time, so nobody does more than two in a week. We have six people who've been trained on the interview format, and that's enough if we plan ahead.
 
 **Speaker 1** [21:44]: Agreed. Let's spread the load. Grace, can you schedule the interviews for the two back-end roles before the end of the month?
 
-**Speaker 5 (Grace?)** [21:51]: Yes, I'll schedule them. I'll start with the two candidates who have competing offers, and I'll send everyone the rotation so you can see your slots in advance.
+**Speaker 6 (Grace?)** [21:51]: Yes, I'll schedule them. I'll start with the two candidates who have competing offers, and I'll send everyone the rotation so you can see your slots in advance.
 
 **Speaker 3 (Ravi?)** [22:01]: While we're on hiring, could we hire a contractor to help with the backlog in the meantime? Even three months of help would make a big difference, especially with the idempotency work and the post-mortem follow-ups landing on the back-end team.
 
@@ -228,25 +246,27 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 1** [22:33]: It was. Now, process. Grace raised the on-call experience earlier, and I want to come back to it. Ravi was on his own for the first 20 minutes of a serious payments outage. That's not a failure on his part. It's a failure of how we set up on-call.
 
-**Speaker 5 (Grace?)** [22:49]: Right. The way it works today, the primary on-call engineer is the only person paged. There's an escalation policy in pager duty, but it only escalates after 30 minutes without an acknowledgement. Ravi acknowledged quickly, so it never escalated, and he had nobody to think out loud with.
+**Speaker 6 (Grace?)** [22:49]: Right. The way it works today, the primary on-call engineer is the only person paged. There's an escalation policy in pager duty, but it only escalates after 30 minutes without an acknowledgement. Ravi acknowledged quickly, so it never escalated, and he had nobody to think out loud with.
 
 **Speaker 3 (Ravi?)** [23:07]: To be honest, the hardest part wasn't the technical problem. It was trying to debug, update the status page, and answer questions in the incident channel all at the same time.
 
-**Speaker 1** [23:19]: On the mobile side we've been talking about the same thing. Our rotation is smaller, so it's even worse for us. Then let's fix it for everyone. From now on, every on-call shift gets a named secondary engineer, who is paged automatically for any high severity incident, and whose job is communication. So the primary can focus on fixing the problem. That's decided, and it applies to both the back-end and mobile rotations.
+**Speaker 4 (Hannah?)** [23:19]: On the mobile side we've been talking about the same thing. Our rotation is smaller, so it's even worse for us.
 
-**Speaker 4** [23:45]: Does the secondary need to be from the same team?
+**Speaker 1** [23:26]: Then let's fix it for everyone. From now on, every on-call shift gets a named secondary engineer, who is paged automatically for any high severity incident, and whose job is communication. So the primary can focus on fixing the problem. That's decided, and it applies to both the back-end and mobile rotations.
+
+**Speaker 5** [23:45]: Does the secondary need to be from the same team?
 
 **Speaker 1** [23:48]: Ideally, yes, but for the first month let's be flexible and see how it works in practice.
 
-**Speaker 5 (Grace?)** [23:54]: There's a related problem. The on-call handbook is still a Google Doc, and half the team can't find it when they need it. During the incident, Ravi spent a few minutes just looking for the link to the payment provider's status page. I can move the on-call handbook into Confluence, next to the runbooks, and clean up the out-of-date sections while I'm at it.
+**Speaker 6 (Grace?)** [23:54]: There's a related problem. The on-call handbook is still a Google Doc, and half the team can't find it when they need it. During the incident, Ravi spent a few minutes just looking for the link to the payment provider's status page. I can move the on-call handbook into Confluence, next to the runbooks, and clean up the out-of-date sections while I'm at it.
 
 **Speaker 1** [24:15]: Do that.
 
-**Speaker 5 (Grace?)** [24:16]: Will do. I'll also add a short checklist at the top for the first 10 minutes of an incident.
+**Speaker 6 (Grace?)** [24:16]: Will do. I'll also add a short checklist at the top for the first 10 minutes of an incident.
 
 **Speaker 2 (Omar?)** [24:22]: If you're adding a checklist, could you include a line about when to involve security? For anything touching payments or customer data, we'd like to know early rather than read about it in the postmortem.
 
-**Speaker 5 (Grace?)** [24:33]: Of course. I'll add that.
+**Speaker 6 (Grace?)** [24:33]: Of course. I'll add that.
 
 **Speaker 1** [24:36]: Good. Before we finish, a quick look at the Partner API. Since it's affected by the Okta decision, Ravi, how does the switch to Okta change the Partner API timeline?
 
@@ -254,17 +274,17 @@ _5 speakers detected (ECAPA-TDNN + average-linkage agglomerative (threshold=0.65
 
 **Speaker 2 (Omar?)** [25:09]: I'm happy to pair with whoever does the gateway configuration. It goes much faster when someone has done it before, and I've done it for 2 other teams.
 
-**Speaker 4** [25:18]: How are we doing rate limiting for partners? Per Partner, or per token?
+**Speaker 5** [25:18]: How are we doing rate limiting for partners? Per Partner, or per token?
 
 **Speaker 3 (Ravi?)** [25:23]: Per Partner. Each Partner gets a quota based on their contract tier, and the gateway enforces it. Partners can have several tokens, but they all count against the same quota, otherwise someone could just create more tokens to get around the limit.
 
-**Speaker 1** [25:40]: Will partners be able to see their own usage? Our support team will get a lot of questions otherwise.
+**Speaker 4 (Hannah?)** [25:40]: Will partners be able to see their own usage? Our support team will get a lot of questions otherwise.
 
 **Speaker 3 (Ravi?)** [25:46]: Not in the first version. It's on the list, but the first version only returns the remaining quota in the response headers. A proper usage dashboard comes later.
 
 **Speaker 1** [25:56]: That's fine for the first version, as long as support knows what to tell partners. I'd like to check in on the Partner API properly next week, once the Okta integration has started and we know more.
 
-**Speaker 4** [26:08]: One more thing on the Partner API. Do we expect much traffic from it in the first month? It affects how I size the gateway.
+**Speaker 5** [26:08]: One more thing on the Partner API. Do we expect much traffic from it in the first month? It affects how I size the gateway.
 
 **Speaker 3 (Ravi?)** [26:16]: The first two partners are small. Maybe a few hundred requests per minute at peak, which is nothing compared to checkout traffic. The current gateway can handle that without any changes.
 

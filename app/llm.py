@@ -42,12 +42,19 @@ load_env()
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 DEFAULT_TIMEOUT = 300
+# Local generation on a laptop is slow: on the 30-minute meeting, qwen3:14b had
+# not finished after 300 s and the call was abandoned — and reported as "could
+# not reach the service", which was wrong. Local calls get a much longer budget.
+OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "1800"))
 
 # Ollama defaults its context window LOW (often 2048-4096) no matter what the
 # model supports. Left unset, a 30-minute transcript is silently truncated and
 # Stage 3 summarises only the opening minutes while reporting a complete record.
 # This is set explicitly for that reason.
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
+# Cap on generated tokens. Without it a model that starts copying the
+# transcript keeps going until the context is full (observed: 22 minutes).
+OLLAMA_NUM_PREDICT = int(os.environ.get("OLLAMA_NUM_PREDICT", "4096"))
 
 # Cloudflare fronts several of these APIs and 403s the default urllib agent.
 USER_AGENT = "meeting-assistant/1.0 (+https://github.com/)"
@@ -69,8 +76,10 @@ class LLMClient:
         self.temperature = temperature
 
     # ------------------------------------------------------------------ api
-    def chat_json(self, system: str, user: str, *, timeout: int = DEFAULT_TIMEOUT) -> dict:
+    def chat_json(self, system: str, user: str, *, timeout: int | None = None) -> dict:
         """Ask for a JSON object back. Raises LLMError on failure or bad JSON."""
+        if timeout is None:
+            timeout = OLLAMA_TIMEOUT if self.backend == "ollama" else DEFAULT_TIMEOUT
         raw = self._chat(system, user, timeout=timeout)
         return _parse_json(raw)
 
@@ -87,7 +96,8 @@ class LLMClient:
                          {"role": "user", "content": user}],
             "stream": False,
             "format": "json",                      # constrain output to JSON
-            "options": {"temperature": self.temperature, "num_ctx": OLLAMA_NUM_CTX},
+            "options": {"temperature": self.temperature, "num_ctx": OLLAMA_NUM_CTX,
+                        "num_predict": OLLAMA_NUM_PREDICT},
             "think": False,                        # qwen3 is a reasoning model; off for speed
         }
         data = self._post(f"{OLLAMA_URL}/api/chat", payload, {}, timeout,
@@ -131,6 +141,17 @@ class LLMClient:
                              f"({exc.code}). {hint}",
             ) from exc
         except Exception as exc:                                   # noqa: BLE001
+            # A timeout is not "unreachable": the service answered the
+            # connection and was still working. Saying the wrong one sends the
+            # user to restart a server that was fine.
+            if isinstance(exc, TimeoutError) or isinstance(
+                    getattr(exc, "reason", None), TimeoutError):
+                raise LLMError(
+                    f"request to {url} timed out after {timeout}s",
+                    user_message=f"The language model did not finish within "
+                                 f"{timeout} s (timed out, not unreachable). For "
+                                 f"long meetings raise OLLAMA_TIMEOUT in .env.",
+                ) from exc
             raise LLMError(
                 f"request to {url} failed: {exc}",
                 user_message=f"Could not reach the language model service. {hint}",

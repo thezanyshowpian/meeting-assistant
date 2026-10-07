@@ -233,6 +233,21 @@ def main() -> int:
         assert ground(rec, held).record.decisions == []
         return "'Ship it.' was never said"
 
+    @check("a quote spanning TWO Whisper segments is still found")
+    def _():
+        split = [Segment(i, i * 5.0, i * 5.0 + 4, t, -0.2, 0.0, 1.0, []) for i, t in enumerate([
+            "Then let's fix it for everyone. From now on, every on call shift gets a",
+            "named secondary engineer, who is paged automatically for any high severity incident,",
+            "and whose job is communication.",
+        ])]
+        rec = MeetingRecord(decisions=[Decision(
+            statement="Add a secondary engineer to every on-call shift",
+            evidence="From now on, every on-call shift gets a named secondary engineer, "
+                     "who is paged automatically for any high severity incident")])
+        res = ground(rec, split)
+        assert len(res.record.decisions) == 1, res.dropped_decisions
+        return f"kept, anchored to segment {res.record.decisions[0].segment_id}"
+
     print("\nDUPLICATE ACTION ITEMS")
 
     @check("request + acceptance listed twice (same owner) -> MERGED")

@@ -190,9 +190,9 @@ sample meeting are in `data/sample_outputs/`.
 ```bash
 python checks/check_stage1.py --audio data/sample_meeting.wav   # 14 checks
 python checks/check_stage2.py                                   # 29 checks, no model
-python checks/check_stage3.py                                   # 21 checks, no model
+python checks/check_stage3.py                                   # 22 checks, no model
 python checks/check_diarization.py                              # 12 checks, no model
-python checks/check_naming.py                                   # 25 checks, no model
+python checks/check_naming.py                                   # 28 checks, no model
 python checks/check_groq.py                                     # API, if configured
 
 python eval/evaluate.py                     # sample meeting, full measured evaluation
@@ -235,21 +235,31 @@ the demo, upload `data/long_meeting_glossary.json` in the sidebar.
 
 ## Measured results
 
-Two synthetic meetings with known ground truth, including the speaker timeline.
-The second was used **only** for final reporting, never for tuning.
+Three synthetic meetings with known answers, including who spoke when. The
+held-out meeting was never used to choose any setting.
 
-| | Sample (3 speakers, 238 words) | Held-out (4 speakers, 134 words) |
-| :-- | :-- | :-- |
-| Transcript WER | **2.52%** | **3.73%** |
-| Refinement effect on WER | no degradation | no degradation |
-| Jargon recovery under simulated ASR errors | **5/5**, negative control held | — |
-| Speakers found | 3/3 | 4/4 |
-| Diarization error rate | 7.97% | 4.71% (zero speaker confusion) |
-| Names bound to the right voice | Arjun ✓; Sam not named (see limitations) | Tom ✓ Dev ✓ Lena ✓ |
-| **Wrong names given** | **0** | **0** |
-| Never-addressed speaker left anonymous | Priya ✓ | Meera ✓ |
-| Owners from first-person commitments | "I'll benchmark" → **Arjun (inferred)** | Tom, Dev, Lena (all inferred, all correct) |
-| Full evaluation (latest run) | **24/25**: the miss is Sam's voice not being named | **18/19**: the miss is Lena's "next week" deadline |
+| | Sample (3 speakers, 1.5 min) | Held-out (4 speakers, 1 min) | Long (6 speakers, 27 min) |
+| :-- | :-- | :-- | :-- |
+| Transcript WER | **2.52%** | **3.73%** | **3.07%** (4,817 words) |
+| Refinement effect on WER | no degradation | no degradation | no degradation; all 33 junk proposals refused |
+| Jargon recovery under simulated ASR errors | **5/5**, negative control held | — | — |
+| Speakers found | 3/3 | 4/4 | 7 for 6 (one extra small cluster) |
+| Diarization error rate | 7.97% | 4.71% | **6.30%** |
+| Names bound to the right voice | Arjun ✓; Sam not named | Tom ✓ Dev ✓ Lena ✓ | Ravi ✓ Hannah ✓ Grace ✓ Omar ✓ (self-introduction); Leo not named |
+| **Wrong names given** | **0** | **0** | **0** |
+| Never-addressed speaker left anonymous | Priya ✓ | Meera ✓ | the chair ✓ |
+| Decisions found / traps avoided | 1/1, 1/1 | 1/1, 1/1 | **6/7, 3/3** |
+| Stage 3 backend (routed by size) | Groq | Groq | local qwen3:14b |
+| Full evaluation (latest run) | **24/25** | **17/19** (18/19 on earlier runs) | **27/40** |
+
+The misses:
+
+- **Sample:** Sam's voice is not named.
+- **Held-out:** the model's run-to-run variation affects owners and deadlines
+  phrased only in a request.
+- **Long meeting:** recall of action items (see limitations).
+- **In all three:** no voice was given a wrong name, and no parked or declined
+  proposal was reported as agreed.
 
 **Stage 3 repeated trials** (same transcript, model the only variable; plain prompt):
 
@@ -279,6 +289,11 @@ Stage 1 runs faster than real time (RTF ≈ 0.45 on CPU).
   usability test *next week*?" → "Sure, I'll book five participants." The model
   sometimes builds the task from the reply and leaves out the deadline (2 of 3
   held-out runs). This is not invented, just missed.
+- **Action items in long meetings.** On the 27-minute meeting the local model
+  found 6 of 7 decisions but only 4 of 11 action items. Every item it did
+  report was grounded, and every owner was correct. Missing items are lost, never
+  invented. The fix is summarising in ~15-minute windows and merging; that is
+  designed (technical description §10) but not built.
 - **Stage 3 is not deterministic on the hosted model.** Wording varies between
   runs and, occasionally, a borderline item does. That's why the backends are
   compared with repeated trials, not single runs.
@@ -325,7 +340,7 @@ docs/                   technical description, design decisions, models, pipelin
 **Docs:**
 
 - `docs/technical_description.md`: the required submission artifact. Section 10
-  covers what we deliberately did not build, and why.
+  covers the extensions we designed and deliberately deferred.
 - `docs/DESIGN_DECISIONS.md`: every significant decision, alternative, and
   mistake, with measurements.
 - `docs/PROMPTS.md`: every prompt sent to a model, generated from the code by

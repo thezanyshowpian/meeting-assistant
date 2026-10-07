@@ -26,3 +26,4 @@ spikes/*.wav
 # (scripts/long_meeting/build.py, then make_sample_meeting.py --name long_meeting).
 # Its script, answer key and generated outputs ARE committed.
 data/long_meeting.wav
+data/.cache/

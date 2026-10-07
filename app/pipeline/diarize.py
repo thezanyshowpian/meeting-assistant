@@ -54,7 +54,15 @@ CONTEXT_PAD_S = 0.10        # audio context either side (inside the pause, so sa
 # matches the held-out oracle exactly (gap +0.0%). The held-out set's own best
 # (0.50) sits at the edge of the tuning plateau and invents a 5th speaker there —
 # which is why we take the plateau centre, not either set's minimum.
-DEFAULT_THRESHOLD = 0.65
+#
+# Changed to 0.60 after the 30-minute, 6-speaker meeting broke 0.65: DER 39.7%,
+# 5 of 6 speakers. The diagnosis (eval/diagnose_diarization.py) showed the chunks
+# were clean (3% mixed) but two voices sat only 0.52 apart, so they merged; at
+# 0.60 the DER was 6.3%. 0.60 is still inside the tuning plateau above. The
+# costs are asymmetric: a wrong MERGE puts two people under one label and can
+# bind a name to the wrong person; an extra SPLIT only leaves a label unnamed.
+# So when in doubt, split.
+DEFAULT_THRESHOLD = 0.60
 
 ECAPA_SOURCE = "speechbrain/spkrec-ecapa-voxceleb"
 
