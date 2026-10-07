@@ -1,0 +1,858 @@
+{
+  "voices": {
+    "Diana": "Samantha",
+    "Ravi": "Rishi",
+    "Hannah": "Karen",
+    "Leo": "Daniel",
+    "Grace": "Moira",
+    "Omar": "Fred"
+  },
+  "turns": [
+    {
+      "speaker": "Diana",
+      "start": 0.009,
+      "end": 20.176,
+      "text": "Good morning everyone, let's get started. We have a packed agenda today, so I want to keep us moving. First, the payments incident from last Tuesday. Then a security review, the mobile release, our cloud costs, backups, and finally hiring and process. Before we begin, we have a guest from another team joining us today."
+    },
+    {
+      "speaker": "Omar",
+      "start": 20.728,
+      "end": 31.715,
+      "text": "Hi everyone, I'm Omar. I lead application security, and I've been asked to sit in because a couple of today's topics touch authentication and the release schedule. Thanks for having me."
+    },
+    {
+      "speaker": "Diana",
+      "start": 32.076,
+      "end": 50.246,
+      "text": "Welcome, glad you could make it. We'll get to the security items right after the incident review, so you won't have to wait long. Okay, the payments incident. I've read the summary in the channel, but I want the whole team to hear the timeline from the person who was on call. Ravi, can you walk us through what happened from the beginning?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 50.819,
+      "end": 79.678,
+      "text": "Sure. So the first alert fired at nine forty two in the morning. Checkout requests started timing out, and within about five minutes the error rate on the payment service was above thirty percent. I acknowledged the page at nine forty five and started looking at the dashboards. The first thing I noticed was that the Kafka consumer lag on the payments topic was climbing very fast. It went from basically zero to about two hundred thousand messages in under ten minutes."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 80.265,
+      "end": 85.157,
+      "text": "Was that the consumers being slow, or was the producer suddenly sending a lot more traffic?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 85.727,
+      "end": 112.214,
+      "text": "Both, actually, and that's what made it confusing. Traffic was higher than normal because of the marketing campaign that went out that morning, roughly three times our usual peak. But the consumers were also slower than they should have been, because each payment event triggers a call to the fraud check service, and that service was itself degraded. So we had more messages coming in and each one taking longer to process."
+    },
+    {
+      "speaker": "Diana",
+      "start": 112.797,
+      "end": 117.268,
+      "text": "And how long were we actually down? I've seen a few different numbers floating around."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 117.832,
+      "end": 135.588,
+      "text": "The full outage, meaning checkout was failing for most users, lasted forty seven minutes. We had partial degradation for another twenty minutes after that while the backlog drained. In total about one thousand two hundred transactions failed outright, and those customers saw an error page."
+    },
+    {
+      "speaker": "Leo",
+      "start": 136.161,
+      "end": 141.68,
+      "text": "And the duplicate charges? I saw a few support tickets about people being charged twice."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 142.254,
+      "end": 174.7,
+      "text": "Yes, that's the part I'm most worried about. When the consumers finally caught up, some of the retried messages were processed twice. The payment webhook from our provider retries if it doesn't get a response within ten seconds, and during the incident we were often slower than that. So the same payment confirmation arrived two or three times, and we didn't have any protection against processing it more than once. We found eighty six customers who were charged twice. Support has refunded all of them already."
+    },
+    {
+      "speaker": "Grace",
+      "start": 175.268,
+      "end": 180.892,
+      "text": "That's not great. Do we know why there was no deduplication? I thought we had something for that."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 181.457,
+      "end": 197.738,
+      "text": "We had deduplication in the old monolith. When the payment service was split out last year, that logic didn't come along with it. Nobody noticed because under normal load the webhook never retries. It only showed up under exactly this kind of slowdown."
+    },
+    {
+      "speaker": "Diana",
+      "start": 198.3,
+      "end": 203.563,
+      "text": "Okay. So what's the fix? I want to separate the immediate fix from the longer term work."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 204.132,
+      "end": 230.436,
+      "text": "The immediate fix is to add idempotency keys to the payment webhook handler. Every event from the provider already carries a unique event identifier. We store that identifier when we first process the event, and if we see it again we return success without processing it a second time. It's a small change, maybe a couple of hundred lines including tests, but it completely removes the duplicate charge problem."
+    },
+    {
+      "speaker": "Leo",
+      "start": 230.999,
+      "end": 242.17,
+      "text": "Where would you store the keys? If it's in Redis with an expiry, we need to think about what happens if Redis evicts them under memory pressure, which is exactly the situation we were in during the incident."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 242.739,
+      "end": 260.529,
+      "text": "Good point. I'd put them in PostgreSQL, in the same transaction that records the payment. That way the key and the payment are written together or not at all, and there's no eviction to worry about. The table will grow, but we can clean up keys older than thirty days with a nightly job."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 261.135,
+      "end": 263.658,
+      "text": "Does the mobile app need to change at all for this?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 264.215,
+      "end": 269.304,
+      "text": "No, this is entirely on the server side. The app never talks to the webhook."
+    },
+    {
+      "speaker": "Diana",
+      "start": 269.9,
+      "end": 284.887,
+      "text": "Alright. I don't think we need to debate this further. We're adding idempotency keys to the payment webhook, stored in PostgreSQL with the payment record. That's decided. Longer term, I'd like us to look at the fraud check dependency, but not today."
+    },
+    {
+      "speaker": "Omar",
+      "start": 285.437,
+      "end": 298.798,
+      "text": "Can I ask one thing from the security side? When you store the event identifiers, make sure you're validating the webhook signature before you store anything. Otherwise someone could replay old events or flood the table with fake identifiers."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 299.167,
+      "end": 311.021,
+      "text": "Yes, we already validate the signature before anything else happens, and the key check would come after that. I'll write the idempotency patch myself, and I should have it in review by Wednesday."
+    },
+    {
+      "speaker": "Omar",
+      "start": 311.572,
+      "end": 313.917,
+      "text": "Perfect, that's all I wanted to confirm."
+    },
+    {
+      "speaker": "Diana",
+      "start": 314.271,
+      "end": 321.536,
+      "text": "Good. Ravi, can you also write up the full incident postmortem by Friday, so we can share it with the wider engineering group?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 322.156,
+      "end": 331.861,
+      "text": "Yes, I'll have the postmortem in Confluence by Friday. I'll include the timeline, the duplicate charge analysis, and the list of follow up items."
+    },
+    {
+      "speaker": "Grace",
+      "start": 332.438,
+      "end": 342.498,
+      "text": "One request for the postmortem: could we include what the on call experience was like? Ravi was alone for the first twenty minutes and I think that's worth discussing separately."
+    },
+    {
+      "speaker": "Diana",
+      "start": 343.058,
+      "end": 352.723,
+      "text": "Agreed, that's a fair point, and it connects to something we'll talk about at the end under process. Let's move on to the security review. Over to you, since you're our guest."
+    },
+    {
+      "speaker": "Omar",
+      "start": 353.304,
+      "end": 381.707,
+      "text": "Thanks. I have two things. The first is authentication for the new partner API. The current plan, as I understand it, is for the platform team to build our own token service, issuing and validating OAuth tokens ourselves. I want to push back on that fairly strongly. Token services look simple and they are not. Key rotation, revocation, clock skew, refresh token theft, there's a long list of things that go wrong, and every one of them becomes our problem forever."
+    },
+    {
+      "speaker": "Leo",
+      "start": 382.068,
+      "end": 387.004,
+      "text": "What's the alternative? We looked at buying something last year and the pricing was painful."
+    },
+    {
+      "speaker": "Omar",
+      "start": 387.557,
+      "end": 404.983,
+      "text": "The company already has an enterprise contract with Okta for employee login. I checked with procurement yesterday, and adding customer facing machine to machine tokens to that contract is included up to fifty thousand monthly active clients. We're nowhere near that. So the marginal cost for us is effectively zero."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 405.351,
+      "end": 413.115,
+      "text": "How much work is the integration compared to building our own? I'd guess our own service was going to be about six weeks."
+    },
+    {
+      "speaker": "Omar",
+      "start": 413.71,
+      "end": 423.17,
+      "text": "For the partner API, the integration is mostly configuration plus validating tokens in the gateway. I'd estimate one to two weeks, and most of that is testing."
+    },
+    {
+      "speaker": "Grace",
+      "start": 423.532,
+      "end": 428.724,
+      "text": "I'm convinced, honestly. I never liked the idea of us owning cryptography code."
+    },
+    {
+      "speaker": "Diana",
+      "start": 429.279,
+      "end": 432.905,
+      "text": "Does anyone want to argue for building our own? Now is the time."
+    },
+    {
+      "speaker": "Leo",
+      "start": 433.471,
+      "end": 437.167,
+      "text": "Not me. I only cared about the cost, and that's answered."
+    },
+    {
+      "speaker": "Diana",
+      "start": 437.741,
+      "end": 446.226,
+      "text": "Then let's make it official. We are not going to build our own token service. We'll use Okta for the partner API tokens instead. That's decided."
+    },
+    {
+      "speaker": "Omar",
+      "start": 446.789,
+      "end": 465.479,
+      "text": "Great. The second item is token lifetime and rotation. Right now the internal service tokens never expire, which is the finding I'm most worried about from the last audit. I'd like us to rotate OAuth tokens every ninety days at the very least, and ideally have the rotation automated so nobody has to remember to do it."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 465.839,
+      "end": 473.985,
+      "text": "Ninety days is fine for us. The services already reload credentials on restart, and we restart more often than that anyway."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 474.545,
+      "end": 480.913,
+      "text": "The mobile app doesn't use those internal tokens at all, right? Just checking it doesn't affect the release."
+    },
+    {
+      "speaker": "Omar",
+      "start": 481.454,
+      "end": 487.314,
+      "text": "Correct, these are only service to service tokens. The app uses user sessions, which are separate."
+    },
+    {
+      "speaker": "Diana",
+      "start": 487.68,
+      "end": 495.099,
+      "text": "Then that's decided too. We'll rotate OAuth tokens every ninety days, automated. Is there anything else from the security side?"
+    },
+    {
+      "speaker": "Omar",
+      "start": 495.659,
+      "end": 511.486,
+      "text": "One last thing. We finished the penetration test on the new checkout flow last week. The report isn't final yet, but there is one medium severity finding in how the app handles expired sessions. I'll send the penetration test report by Thursday, with the details and a recommended fix."
+    },
+    {
+      "speaker": "Diana",
+      "start": 511.933,
+      "end": 522.165,
+      "text": "Thank you. That brings us neatly to the mobile release, because if there's a finding in checkout, I want to understand whether it blocks the release. Hannah, where does that leave the release?"
+    },
+    {
+      "speaker": "Hannah",
+      "start": 522.735,
+      "end": 543.986,
+      "text": "So, the current plan was to ship version four point two on the twentieth. The build is on TestFlight and about two hundred internal testers have been using it for a week. The feedback has been good overall. The main new feature, saved payment methods, is working well, and the crash rate in Sentry is at zero point eight percent, which is higher than I'd like but not alarming."
+    },
+    {
+      "speaker": "Omar",
+      "start": 544.534,
+      "end": 561.399,
+      "text": "The session finding is in exactly the saved payment methods flow, unfortunately. If a session expires while the user is on the payment screen, the app keeps showing the saved card details for a few seconds before it redirects to login. It's not a data leak to another user, but it's not the behaviour we want either."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 561.779,
+      "end": 574.088,
+      "text": "That's fixable. It's a matter of checking the session state before rendering the screen rather than after. But it needs a new build, another round of testing, and then App Store review, which has been taking three to four days lately."
+    },
+    {
+      "speaker": "Diana",
+      "start": 574.651,
+      "end": 577.394,
+      "text": "So realistically, can we still make the twentieth?"
+    },
+    {
+      "speaker": "Hannah",
+      "start": 578.055,
+      "end": 592.048,
+      "text": "Honestly, no, not safely. If the fix goes in this week, testing takes us to the middle of next week, and with review time we'd be cutting it very close. I'd rather not ship a payments feature in a rush right after a payments incident."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 592.607,
+      "end": 597.88,
+      "text": "I agree with that. The last thing we need is a second payments problem in the same month."
+    },
+    {
+      "speaker": "Diana",
+      "start": 598.474,
+      "end": 608.171,
+      "text": "Okay. Let's move the release. We're delaying the mobile release to the twenty seventh. That gives us a week of buffer. Hannah, does the twenty seventh work for you and the team?"
+    },
+    {
+      "speaker": "Hannah",
+      "start": 608.735,
+      "end": 619.825,
+      "text": "Yes, the twenty seventh works. I'll fix the session check myself, and I'll also fix the login crash this week, since that's the biggest single source of crashes in Sentry right now."
+    },
+    {
+      "speaker": "Leo",
+      "start": 620.383,
+      "end": 623.267,
+      "text": "Out of curiosity, what is the login crash?"
+    },
+    {
+      "speaker": "Hannah",
+      "start": 623.836,
+      "end": 640.788,
+      "text": "It's an old one. On some older Android phones, if the user rotates the screen while the login request is in flight, the app tries to update a view that no longer exists. It's about forty percent of all our crashes, so fixing it should bring the crash rate down to something like zero point five percent."
+    },
+    {
+      "speaker": "Grace",
+      "start": 641.343,
+      "end": 654.74,
+      "text": "While we're talking about the app, I've been wondering whether we should rewrite the mobile app in Flutter. Right now we maintain two separate code bases, one for iOS and one for Android, and every feature costs us twice."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 655.312,
+      "end": 664.455,
+      "text": "I've thought about it too, and it's tempting. But a rewrite is at least two quarters of work for the whole mobile team, and we'd be shipping almost nothing new during that time."
+    },
+    {
+      "speaker": "Diana",
+      "start": 665.007,
+      "end": 676.705,
+      "text": "Let's park that one. It's a real conversation, but not this quarter, and definitely not in the same month as a delayed release. If someone wants to write up the trade offs properly, we can revisit it at planning."
+    },
+    {
+      "speaker": "Grace",
+      "start": 677.274,
+      "end": 679.921,
+      "text": "That's fair. I just wanted it on the radar."
+    },
+    {
+      "speaker": "Diana",
+      "start": 680.491,
+      "end": 687.543,
+      "text": "It is now. Hannah, could you get the release notes ready by next Monday, so marketing has time to prepare the announcement?"
+    },
+    {
+      "speaker": "Hannah",
+      "start": 688.11,
+      "end": 693.787,
+      "text": "Sure, I'll get those done. I'll make sure they mention the saved payment methods and the crash fixes."
+    },
+    {
+      "speaker": "Diana",
+      "start": 694.415,
+      "end": 708.459,
+      "text": "Thank you. Before we get to costs, I want to spend a few minutes on customer impact, because the incident wasn't only an engineering event. Our support team had a very long week, and I'd like everyone to understand what that looked like from their side."
+    },
+    {
+      "speaker": "Grace",
+      "start": 709.028,
+      "end": 729.483,
+      "text": "I spoke with the support lead on Monday. They received just over nine hundred tickets in the three days after the incident, compared with about two hundred and fifty in a normal three day period. Most were customers asking whether their payment went through, and the most stressful ones were the duplicate charges, because those customers were understandably angry."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 730.044,
+      "end": 739.345,
+      "text": "Did support have what they needed to answer the duplicate charge questions? I remember they were asking us for transaction lists during the incident itself."
+    },
+    {
+      "speaker": "Grace",
+      "start": 739.937,
+      "end": 759.397,
+      "text": "That was the main complaint. For the first day, they had no way to check whether a specific customer had been charged twice, so every one of those tickets was escalated to engineering. Once Ravi shared the list of affected customers, they could answer directly, and the response time dropped from about six hours to under one hour."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 759.964,
+      "end": 768.94,
+      "text": "Is there something we could build so that support can look up payment events themselves next time? On mobile we had a similar problem with subscription renewals last year."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 769.489,
+      "end": 785.804,
+      "text": "There's an internal admin tool that shows payments for a customer, but it doesn't show the raw webhook events, which is what you'd need to spot a duplicate. Adding that view is not a lot of work, but it's not something I'd squeeze in before the idempotency fix."
+    },
+    {
+      "speaker": "Diana",
+      "start": 786.384,
+      "end": 798.007,
+      "text": "Agreed, the fix comes first. Let's capture the support tooling gap in the postmortem as a follow up rather than commit to it today. What about the public side? How did the status page work during the incident?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 798.578,
+      "end": 812.043,
+      "text": "Not well, honestly. The status page was updated twenty five minutes after the first alert, and only because someone in support asked whether we were going to say anything. By then customers had been seeing errors for a long time."
+    },
+    {
+      "speaker": "Grace",
+      "start": 812.601,
+      "end": 820.746,
+      "text": "Which connects to the on call problem again. Ravi was the only person who could have updated it, and he was busy actually fixing the problem."
+    },
+    {
+      "speaker": "Diana",
+      "start": 821.307,
+      "end": 830.355,
+      "text": "We'll come back to that under process, because I think the answer is the same for both. What about the numbers on the business side? Do we know what the incident cost us?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 830.944,
+      "end": 853.156,
+      "text": "Finance gave me a rough estimate yesterday. The failed transactions during the outage were worth about thirty eight thousand dollars. Some of those customers came back and paid later the same day, so the real loss is probably closer to fifteen thousand. The refunds for the duplicate charges were about four thousand two hundred, but that money was never really ours anyway."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 853.726,
+      "end": 857.584,
+      "text": "And we probably lost some trust, which doesn't show up in that number."
+    },
+    {
+      "speaker": "Diana",
+      "start": 858.134,
+      "end": 876.847,
+      "text": "Exactly. That's the part I care about most. Payments are the one place where customers have no patience for mistakes, and they're right not to. Okay, I think that's a fair picture. Let's move on to cloud costs, because finance has started asking questions there as well. Leo, how bad is the cloud bill this month?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 877.514,
+      "end": 894.881,
+      "text": "It's not good. Our total cloud spend last month was sixty one thousand dollars, up from about forty eight thousand three months ago. The biggest single jump is observability. Our Datadog bill alone is now fourteen thousand dollars a month, and it was around ten thousand at the start of the quarter."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 895.446,
+      "end": 899.881,
+      "text": "What's driving the Datadog growth? We haven't added that many services."
+    },
+    {
+      "speaker": "Leo",
+      "start": 900.464,
+      "end": 923.952,
+      "text": "Logs, almost entirely. When I broke it down, debug level logs are about sixty percent of our total log volume. Most of them come from three services, and a lot of it is the payment service logging every single Kafka message it processes. Nobody reads those logs unless something has gone wrong, and when something goes wrong we usually need the last hour, not the last thirty days."
+    },
+    {
+      "speaker": "Grace",
+      "start": 924.524,
+      "end": 927.349,
+      "text": "Can't we just turn debug logging off in production?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 927.915,
+      "end": 942.622,
+      "text": "We could, but then during an incident like last week's, we'd have nothing to look at. Ravi actually used those debug logs to find the duplicate charges. So I don't want to throw them away. I want to stop paying premium prices to keep them hot."
+    },
+    {
+      "speaker": "Diana",
+      "start": 943.183,
+      "end": 945.103,
+      "text": "What are the options, concretely?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 945.672,
+      "end": 966.341,
+      "text": "The cleanest option is to keep debug logs in Datadog for only three days, and archive everything older than that to cold storage in our own cloud account. Cold storage is about two percent of the cost per gigabyte. If we ever need older logs, we can rehydrate a specific time window, which takes maybe an hour. I've tested it on one service and it works."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 966.925,
+      "end": 972.586,
+      "text": "Would that affect the mobile crash logs? We sometimes look back a couple of weeks when a crash is rare."
+    },
+    {
+      "speaker": "Leo",
+      "start": 973.14,
+      "end": 982.608,
+      "text": "No, crash reports go to Sentry, not Datadog. This is only server side debug logs. Info and error level logs would stay exactly as they are."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 983.172,
+      "end": 988.853,
+      "text": "Three days is enough for most incidents. Last week we only needed the previous two hours."
+    },
+    {
+      "speaker": "Diana",
+      "start": 989.432,
+      "end": 993.239,
+      "text": "Leo, what would the cold tier option save us per month, roughly?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 993.806,
+      "end": 1002.373,
+      "text": "Roughly six thousand dollars a month, so close to half of the Datadog bill. The one time setup is small, a few hours of configuration."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1002.936,
+      "end": 1018.816,
+      "text": "Then I don't see a reason to wait. We're moving debug logs older than three days to the cold storage tier. That's decided. Separately, I'll talk to finance about the Datadog contract myself, because I think our committed spend level is wrong, and they're the ones who negotiated it."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1019.396,
+      "end": 1026.535,
+      "text": "Should we be worried about other things growing the same way without anyone noticing? This only came up because finance asked."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1027.11,
+      "end": 1047.901,
+      "text": "That's exactly my concern. Right now we have no alerting on spend at all. We find out at the end of the month when the invoice arrives. I'll set up budget alerts in Terraform, so that each team gets a notification when its projected monthly spend goes more than twenty percent over its budget. Then the next surprise reaches us in days instead of weeks."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1048.484,
+      "end": 1053.098,
+      "text": "Will the alerts be per service or per team? Per service would be very noisy."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1053.666,
+      "end": 1061.83,
+      "text": "Per team, with a breakdown by service in the alert itself, so you can see which service caused it without having twenty separate alerts."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 1062.418,
+      "end": 1068.007,
+      "text": "That sounds useful. Can mobile be included, even though our costs are tiny compared to the backend?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 1068.569,
+      "end": 1072.978,
+      "text": "Sure, every team gets one, it's the same configuration either way."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1073.54,
+      "end": 1076.188,
+      "text": "Good. What else is in the bill that we should know about?"
+    },
+    {
+      "speaker": "Leo",
+      "start": 1076.757,
+      "end": 1100.686,
+      "text": "The other big item is the Kubernetes clusters. We run three staging clusters, and as far as I can tell only one of them is used regularly. The other two were created for projects that finished months ago, and they cost about four thousand dollars a month between them. The problem is that I'm not completely sure nobody depends on them. There might be some forgotten test environment or a demo somebody uses once a quarter."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1101.256,
+      "end": 1102.94,
+      "text": "So we can't just delete them."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1103.509,
+      "end": 1112.733,
+      "text": "Not without checking first. Someone needs to audit the unused staging clusters and confirm with each team that nothing important is running there before we shut them down."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1113.288,
+      "end": 1119.88,
+      "text": "I'd guess at least one of them still has the old load testing setup, but I'm not sure anyone uses it."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1120.48,
+      "end": 1129.01,
+      "text": "Let's make sure that gets done properly rather than quickly. I don't want to delete something on a Friday and find out on Monday that a customer demo depended on it."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1129.574,
+      "end": 1145.954,
+      "text": "Agreed. One more thought, and this is really just an idea, not a proposal. Maybe someday we could look into self hosting Grafana for our dashboards instead of paying for the hosted version. It's not urgent and I haven't done any analysis, so please don't treat it as a plan."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1146.523,
+      "end": 1155.908,
+      "text": "Noted as an idea. If the numbers ever look compelling, bring it back with an analysis. Okay, let's move on to backups, which is a short one but important."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1156.47,
+      "end": 1160.655,
+      "text": "Is this about the restore test that was supposed to happen last quarter?"
+    },
+    {
+      "speaker": "Diana",
+      "start": 1161.224,
+      "end": 1182.638,
+      "text": "Exactly that. We take nightly backups of the main PostgreSQL database, and we've never actually tested how long a full restore takes. If we lost the primary database tomorrow, I genuinely don't know whether we'd be back in one hour or one day. That's not acceptable for a payments company. Leo, can you check how long a full backup restore actually takes?"
+    },
+    {
+      "speaker": "Grace",
+      "start": 1183.267,
+      "end": 1199.607,
+      "text": "Actually, I can take that one. Leo has more than enough on his plate with the cost work, and I've been meaning to learn the backup tooling properly anyway. I'll run a full restore test on Thursday, into an isolated environment, and I'll report how long each step takes."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1200.24,
+      "end": 1210.037,
+      "text": "Thanks, I appreciate that. The runbook is a bit out of date, so ping me if any of the steps don't make sense. The backup bucket permissions changed in the summer."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1210.598,
+      "end": 1222.847,
+      "text": "If you're restoring into an isolated environment, make sure the restored database can't send any emails or webhooks. We had a scare once where a restored copy started emailing real customers."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1223.421,
+      "end": 1228.711,
+      "text": "Good to know. I'll disable all outbound traffic from the restore environment before starting."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1229.355,
+      "end": 1240.741,
+      "text": "Thank you, both. I'd like the restore time written down somewhere permanent once we have it, because the next question will be what our recovery time objective should be, and we can't answer that without a real number."
+    },
+    {
+      "speaker": "Omar",
+      "start": 1241.328,
+      "end": 1251.564,
+      "text": "From the security side, please make sure the restore environment is torn down afterwards. Restored copies of production data lying around are one of the most common findings in audits."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1251.973,
+      "end": 1254.311,
+      "text": "Understood, I'll delete it the same day."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1254.878,
+      "end": 1260.694,
+      "text": "Let's turn to hiring and process. Grace, how is the hiring pipeline looking for the backend roles?"
+    },
+    {
+      "speaker": "Grace",
+      "start": 1261.272,
+      "end": 1280.767,
+      "text": "Better than last month. We have two open backend positions. Recruiting has passed us eleven candidates in total, and after the initial screens, five of them look strong enough for the technical interview. Two of those five have competing offers, so timing matters. If we wait three or four weeks, we'll probably lose them."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1281.349,
+      "end": 1289.605,
+      "text": "Who's doing the technical interviews? Last round, the same three people did all of them, and it took a lot of time out of the sprint."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1290.19,
+      "end": 1303.916,
+      "text": "That's part of what I wanted to raise. I'd like to spread the interviews across more people this time, so nobody does more than two in a week. We have six people who've been trained on the interview format, and that's enough if we plan ahead."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1304.47,
+      "end": 1311.147,
+      "text": "Agreed, let's spread the load. Grace, can you schedule the interviews for the two backend roles before the end of the month?"
+    },
+    {
+      "speaker": "Grace",
+      "start": 1311.806,
+      "end": 1321.338,
+      "text": "Yes, I'll schedule them. I'll start with the two candidates who have competing offers, and I'll send everyone the rotation so you can see your slots in advance."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1321.909,
+      "end": 1336.275,
+      "text": "While we're on hiring, could we hire a contractor to help with the backlog in the meantime? Even three months of help would make a big difference, especially with the idempotency work and the postmortem follow ups landing on the backend team."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1336.834,
+      "end": 1350.523,
+      "text": "No, I'm afraid not. We don't have budget for a contractor this quarter, and honestly, onboarding someone for three months would cost us almost as much time as it saves. Let's focus on the permanent hires and get them in as quickly as we can."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1351.087,
+      "end": 1353.308,
+      "text": "Understood. It was worth asking."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1353.887,
+      "end": 1368.648,
+      "text": "It was. Now, process. Grace raised the on call experience earlier, and I want to come back to it. Ravi was on his own for the first twenty minutes of a serious payments outage. That's not a failure on his part, it's a failure of how we set up on call."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1369.21,
+      "end": 1387.331,
+      "text": "Right. The way it works today, the primary on call engineer is the only person paged. There's an escalation policy in PagerDuty, but it only escalates after thirty minutes without an acknowledgement. Ravi acknowledged quickly, so it never escalated, and he had nobody to think out loud with."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1387.896,
+      "end": 1399.155,
+      "text": "To be honest, the hardest part wasn't the technical problem. It was trying to debug, update the status page, and answer questions in the incident channel all at the same time."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 1399.724,
+      "end": 1406.156,
+      "text": "On the mobile side we've been talking about the same thing. Our rotation is smaller, so it's even worse for us."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1406.714,
+      "end": 1425.126,
+      "text": "Then let's fix it for everyone. From now on, every on call shift gets a named secondary engineer, who is paged automatically for any high severity incident, and whose job is communication, so the primary can focus on fixing the problem. That's decided, and it applies to both the backend and mobile rotations."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1425.687,
+      "end": 1428.228,
+      "text": "Does the secondary need to be from the same team?"
+    },
+    {
+      "speaker": "Diana",
+      "start": 1428.785,
+      "end": 1434.034,
+      "text": "Ideally, yes, but for the first month let's be flexible and see how it works in practice."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1434.612,
+      "end": 1455.19,
+      "text": "There's a related problem. The on call handbook is still a Google doc, and half the team can't find it when they need it. During the incident, Ravi spent a few minutes just looking for the link to the payment provider's status page. I can move the on call handbook into Confluence, next to the runbooks, and clean up the out of date sections while I'm at it."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1455.767,
+      "end": 1456.28,
+      "text": "Do that."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1456.846,
+      "end": 1462.203,
+      "text": "Will do. I'll also add a short checklist at the top for the first ten minutes of an incident."
+    },
+    {
+      "speaker": "Omar",
+      "start": 1462.772,
+      "end": 1473.685,
+      "text": "If you're adding a checklist, could you include a line about when to involve security? For anything touching payments or customer data, we'd like to know early rather than read about it in the postmortem."
+    },
+    {
+      "speaker": "Grace",
+      "start": 1474.054,
+      "end": 1475.778,
+      "text": "Of course, I'll add that."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1476.342,
+      "end": 1486.853,
+      "text": "Good. Before we finish, a quick look at the partner API, since it's affected by the Okta decision. Ravi, how does the switch to Okta change the partner API timeline?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1487.416,
+      "end": 1509.82,
+      "text": "It probably helps. The original plan had six weeks for our own token service, and Omar's estimate for the Okta integration is one to two weeks. So even if the integration takes longer than expected, we should still be ahead of the original schedule. The rest of the partner API, the endpoints themselves and the rate limiting, is unchanged."
+    },
+    {
+      "speaker": "Omar",
+      "start": 1510.408,
+      "end": 1518.642,
+      "text": "I'm happy to pair with whoever does the gateway configuration. It goes much faster when someone has done it before, and I've done it for two other teams."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1519.027,
+      "end": 1523.387,
+      "text": "How are we doing rate limiting for partners? Per partner, or per token?"
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1523.947,
+      "end": 1539.945,
+      "text": "Per partner. Each partner gets a quota based on their contract tier, and the gateway enforces it. Partners can have several tokens, but they all count against the same quota, otherwise someone could just create more tokens to get around the limit."
+    },
+    {
+      "speaker": "Hannah",
+      "start": 1540.54,
+      "end": 1546.188,
+      "text": "Will partners be able to see their own usage? Our support team will get a lot of questions otherwise."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1546.745,
+      "end": 1556.624,
+      "text": "Not in the first version. It's on the list, but the first version only returns the remaining quota in the response headers. A proper usage dashboard comes later."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1557.221,
+      "end": 1568.046,
+      "text": "That's fine for the first version, as long as support knows what to tell partners. I'd like to check in on the partner API properly next week, once the Okta integration has started and we know more."
+    },
+    {
+      "speaker": "Leo",
+      "start": 1568.608,
+      "end": 1576.081,
+      "text": "One more thing on the partner API: do we expect much traffic from it in the first month? It affects how I size the gateway."
+    },
+    {
+      "speaker": "Ravi",
+      "start": 1576.641,
+      "end": 1588.085,
+      "text": "The first two partners are small. Maybe a few hundred requests per minute at peak, which is nothing compared to checkout traffic. The current gateway can handle that without any changes."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1588.655,
+      "end": 1612.5,
+      "text": "Good. I think that covers everything on the agenda. To summarise the big picture, it's been a rough couple of weeks, but we now have a concrete fix for the duplicate charges, a much simpler authentication plan, a safer release date, a plan to get the cloud bill under control, and some real improvements to how we handle on call. Thank you all, and thank you especially for joining us today, it was very helpful."
+    },
+    {
+      "speaker": "Omar",
+      "start": 1613.076,
+      "end": 1616.88,
+      "text": "Thanks for having me. I'll keep an eye out for the Okta questions."
+    },
+    {
+      "speaker": "Diana",
+      "start": 1617.242,
+      "end": 1620.277,
+      "text": "Same time next week, everyone. Thanks."
+    }
+  ]
+}

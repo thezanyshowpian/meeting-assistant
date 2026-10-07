@@ -140,10 +140,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--audio", default=None)
-    ap.add_argument("--fixture", choices=["sample", "heldout"], default="sample",
-                    help="heldout: the 4-speaker meeting never used for tuning")
+    ap.add_argument("--fixture", choices=["sample", "heldout", "long"], default="sample",
+                    help="heldout: the 4-speaker meeting never used for tuning; "
+                         "long: the ~30-minute, 6-speaker demo meeting")
+    ap.add_argument("--out", help="also write meeting_record.{json,md} and "
+                                  "transcripts.md to this directory")
     args = ap.parse_args()
-    script = SCRIPT if args.fixture == "sample" else SCRIPT.replace("sample_", "heldout_")
+    script = SCRIPT.replace("sample_", f"{args.fixture}_")
     args.audio = args.audio or script.replace("_script.json", ".wav")
     rttm = script.replace("_script.json", "_reference.rttm")
 
@@ -168,6 +171,16 @@ def main() -> int:
     if not result.ok:
         print(f"\nPipeline failed at {result.failed_stage}: {result.error}")
         return 1
+    print("  stage times: " + ", ".join(f"{k} {v:.0f}s" for k, v in result.stage_times.items()))
+    if args.out:
+        from app.export import to_json, to_markdown, transcripts_markdown
+        os.makedirs(args.out, exist_ok=True)
+        for name, text in (("meeting_record.json", to_json(result)),
+                           ("meeting_record.md", to_markdown(result)),
+                           ("transcripts.md", transcripts_markdown(result))):
+            with open(os.path.join(args.out, name), "w") as fh:
+                fh.write(text)
+        print(f"  wrote outputs to {args.out}")
 
     # Surface warnings LOUDLY. Without this a hard backend failure is caught,
     # degraded, and shows up as "no decisions reported" — indistinguishable from
@@ -413,6 +426,25 @@ def main() -> int:
             control_present and control_survived,
             "" if control_present else "CONTROL WAS NEVER INJECTED — test invalid",
         ))
+
+    # ------------------------------- Stage 2 on REAL mispronunciations (long)
+    # The voice actually says "cough ka" for Kafka. Whether Whisper mishears it
+    # is up to Whisper; we score recovery only where it did.
+    variants = truth.get("spoken_variants")
+    if variants and result.refinement:
+        print("\n" + "-" * 72)
+        print("STAGE 2 ON SPOKEN MISPRONUNCIATIONS")
+        print("-" * 72)
+        raw_l, ref_l = result.raw_text.lower(), result.refined_text.lower()
+        for meant, spoken in variants.items():
+            if spoken.lower() in raw_l:
+                ok = spoken.lower() not in ref_l
+                print(f"  {spoken!r:<18} misheard by Whisper -> "
+                      f"{'recovered as ' + meant if ok else 'NOT recovered'}")
+                score.append((f"misheard {spoken!r} recovered -> {meant}", ok, ""))
+            else:
+                print(f"  {spoken!r:<18} Whisper heard it as intended — nothing for "
+                      f"Stage 2 to do (not scored)")
 
     # ------------------------------------------------------------------ report
     print("\n" + "=" * 72)

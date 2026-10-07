@@ -405,3 +405,31 @@ Markdown (human-readable) + JSON (machine-readable), from the same object
 The harnesses that guard faithfulness need **no model**. That follows from the
 design: what decides truth (gates, grounding, naming) is deterministic code, not
 model output.
+
+---
+
+## 10. Scope: what we deliberately did not build
+
+Each item below came up during design. It was left out because it needs either
+**data we don't have** or **days of work that can't be validated by the
+deadline**. Building something we can't measure would contradict the rest of
+this document.
+
+Smaller extensions that *did* fit were built:
+
+- uploading a custom glossary;
+- a known speaker count;
+- playing back the recording at the moment each decision or task was said;
+- a warning before a transcript overflows the local model's context.
+
+| Not built | Why it's out of scope now | How we would do it |
+| :-- | :-- | :-- |
+| **Evaluation on real human meetings** | Our two fixtures and the 30-minute meeting are text-to-speech: clean, no crosstalk, no accents, no overlap. Real meetings will score worse. An honest real-audio benchmark needs a public corpus with reference transcripts *and* speaker timelines, and a day of data handling before scoring starts. | The **AMI Meeting Corpus** (CC BY 4.0: 100 hours of real meetings, with word-level transcripts and speaker annotation) scored with the same WER and DER code. Report the gap to synthetic audio, rather than hide it. |
+| **Overlapping speech** | Our diarization gives each chunk exactly one speaker. When two people talk at once, one of them is lost. Detecting overlap needs a model trained for it, and it changes the data model (a word can then have two candidate speakers). | Optional **pyannote.audio 3.x** backend, with overlap detection, behind `HF_TOKEN`. Its models are gated, which breaks "clone and run without an account", so it would stay optional. Measure DER with overlap on AMI. |
+| **Acoustic re-verification of Stage 2 edits** | Designed (see the decision log). The naive version is circular: priming Whisper with the proposed term makes it "hear" that term. The valid version needs a decoy control on every edit and a real-audio test set to calibrate. On TTS audio, Stage 2 had no false positives to catch. | Re-decode each edited span twice, primed with the proposed term and with a phonetically distant decoy. Accept only if the term wins and the decoy loses. |
+| **Meetings longer than ~60 minutes** | The local context (16,384 tokens) holds about an hour. Beyond that we now *warn*, rather than silently truncate. A correct long-meeting design is map-reduce: summarise sections, then merge. That needs cross-section deduplication of decisions, and grounding against the right section. That is a new evaluation problem, not a parameter. | Section by speaker turns into ~15-minute windows; extract per window; merge with the same evidence grounding (Stage 4 already works per quote); evaluate on a 2-hour fixture. |
+| **Real-time / streaming transcription** | A different architecture: incremental ASR, diarization that revises earlier labels, and a record that updates as the meeting goes. Our verification assumes the whole transcript is available. | Whisper on sliding windows with local agreement; re-run Stages 3–4 per agenda item. |
+| **Speaker identity across meetings** | Recognising "Arjun" by voice in the next meeting means storing voiceprints. That is biometric data, and it needs consent and retention rules, not just code. Today names come only from what is said, and only for this meeting. | Opt-in enrolment, with embeddings stored per workspace and deletable. Match new speakers to enrolled centroids, still shown as *inferred*. |
+| **Non-English and code-switched meetings (e.g. Hinglish)** | Whisper handles many languages, but Stage 2's phonetic matching (Double Metaphone) is designed for English. The prompts, naming patterns ("X, can you…") and evaluation sets are English too. Supporting this properly means new matching, new patterns and a new test set. | A language-aware phonetic index (or transliteration first); localised naming patterns; a bilingual fixture. |
+| **Fine-tuning the speech model on domain vocabulary** | Needs hours of labelled in-domain audio and a GPU; we have neither. Stage 2 exists precisely to correct terminology without retraining. | Collect corrected transcripts from Stage 2 (with user consent) as training data; LoRA-tune Whisper; compare against glossary-only correction. |
+| **A human review loop** | Editing the record in the interface is easy. Doing it *usefully* means re-grounding edited items and keeping an audit trail of model output versus human edits, and that needs a review study to show it helps. | Editable table → re-run Stage 4 on edited rows → keep both versions in the JSON. |

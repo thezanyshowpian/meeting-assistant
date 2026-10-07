@@ -22,6 +22,7 @@ Writes:
 USAGE
     python scripts/make_sample_meeting.py                       # the sample meeting
     python scripts/make_sample_meeting.py --name heldout_meeting  # the held-out one
+    python scripts/make_sample_meeting.py --name long_meeting     # ~30-min demo meeting
 """
 from __future__ import annotations
 
@@ -75,9 +76,11 @@ def assign_voices(preferences: dict, available: set[str]) -> dict[str, str]:
     return chosen
 
 
-def synth_line(text: str, voice: str, path: str) -> None:
-    subprocess.run(["say", "-v", voice, "-o", path,
-                    "--data-format=LEI16@16000", text], check=True)
+def synth_line(text: str, voice: str, path: str, rate: int | None = None) -> None:
+    cmd = ["say", "-v", voice, "-o", path, "--data-format=LEI16@16000"]
+    if rate:
+        cmd += ["-r", str(rate)]              # words per minute
+    subprocess.run(cmd + [text], check=True)
 
 
 def speech_bounds(pcm: np.ndarray) -> tuple[int, int]:
@@ -119,7 +122,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         for i, line in enumerate(spec["lines"]):
             path = os.path.join(tmp, f"line_{i:03d}.wav")
-            synth_line(line["text"], voices[line["speaker"]], path)
+            # "spoken" (optional) is what the voice SAYS; "text" is what the speaker
+            # MEANT, and is the reference. Used to simulate a mumbled or accented
+            # term ("cough ka" for Kafka) that Stage 2 should recover.
+            synth_line(line.get("spoken", line["text"]), voices[line["speaker"]], path,
+                       spec.get("rate"))
             with wave.open(path, "rb") as w:
                 assert w.getnchannels() == 1 and w.getsampwidth() == 2
                 assert w.getframerate() == RATE, f"unexpected rate {w.getframerate()}"
@@ -134,7 +141,7 @@ def main() -> int:
             })
             chunks += [pcm, gap]
             cursor += len(pcm) + len(gap)
-            print(f"  [{i + 1:2d}/{len(spec['lines'])}] {turns[-1]['start']:6.2f}–"
+            print(f"  [{i + 1:3d}/{len(spec['lines'])}] {turns[-1]['start']:6.2f}–"
                   f"{turns[-1]['end']:6.2f}s  {line['speaker']}: {line['text'][:50]}…")
 
     audio = np.concatenate(chunks)

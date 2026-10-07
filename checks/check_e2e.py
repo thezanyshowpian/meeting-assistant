@@ -28,6 +28,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--audio", required=True)
     ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--glossary", help="JSON glossary: a list of terms, or {\"terms\": [...]}")
     ap.add_argument("--out", help="directory to write meeting_record.{json,md} "
                                   "and transcripts.md")
     args = ap.parse_args()
@@ -36,8 +37,14 @@ def main() -> int:
     print("END-TO-END PIPELINE CHECK")
     print("=" * 70)
 
+    glossary = None
+    if args.glossary:
+        from app.pipeline.glossary import Glossary
+        with open(args.glossary) as fh:
+            data = json.load(fh)
+        glossary = Glossary(data["terms"] if isinstance(data, dict) else data)
     result = run_pipeline(
-        args.audio, use_llm_refinement=not args.no_llm,
+        args.audio, glossary=glossary, use_llm_refinement=not args.no_llm,
         progress=lambda stage, msg: print(f"  [{stage}] {msg}", flush=True),
     )
 

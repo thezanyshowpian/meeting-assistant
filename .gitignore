@@ -21,3 +21,8 @@ spikes/*.wav
 
 # OS
 .DS_Store
+
+# The ~30-min demo meeting is ~58 MB as WAV: regenerate it instead
+# (scripts/long_meeting/build.py, then make_sample_meeting.py --name long_meeting).
+# Its script, answer key and generated outputs ARE committed.
+data/long_meeting.wav

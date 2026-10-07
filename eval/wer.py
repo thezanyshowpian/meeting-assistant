@@ -35,29 +35,28 @@ def compute_wer(reference: str, hypothesis: str) -> WERResult:
     ref, hyp = normalize(reference), normalize(hypothesis)
     n, m = len(ref), len(hyp)
 
-    # d[i][j] = (cost, S, D, I) for ref[:i] vs hyp[:j]
-    d = [[(0, 0, 0, 0)] * (m + 1) for _ in range(n + 1)]
+    # prev[j] / cur[j] = (cost, S, D, I) for ref[:i-1] / ref[:i] vs hyp[:j].
+    # Two rows, not the full matrix: a 30-minute meeting is ~5,000 x 5,000
+    # cells, and a full table of tuples needs gigabytes. Same recurrence and
+    # tie-breaking as the textbook version, so results are identical.
+    prev = [(j, 0, 0, j) for j in range(m + 1)]
     for i in range(1, n + 1):
-        d[i][0] = (i, 0, i, 0)
-    for j in range(1, m + 1):
-        d[0][j] = (j, 0, 0, j)
-
-    for i in range(1, n + 1):
+        cur = [(i, 0, i, 0)] + [None] * m
         for j in range(1, m + 1):
             if ref[i - 1] == hyp[j - 1]:
-                d[i][j] = d[i - 1][j - 1]
+                cur[j] = prev[j - 1]
                 continue
-            sub = d[i - 1][j - 1]
-            dele = d[i - 1][j]
-            ins = d[i][j - 1]
+            sub, dele, ins = prev[j - 1], prev[j], cur[j - 1]
             best = min(sub[0], dele[0], ins[0]) + 1
             if sub[0] <= dele[0] and sub[0] <= ins[0]:
-                d[i][j] = (best, sub[1] + 1, sub[2], sub[3])
+                cur[j] = (best, sub[1] + 1, sub[2], sub[3])
             elif dele[0] <= ins[0]:
-                d[i][j] = (best, dele[1], dele[2] + 1, dele[3])
+                cur[j] = (best, dele[1], dele[2] + 1, dele[3])
             else:
-                d[i][j] = (best, ins[1], ins[2], ins[3] + 1)
+                cur[j] = (best, ins[1], ins[2], ins[3] + 1)
+        prev = cur
+    d_last = prev
 
-    cost, s, dl, ins = d[n][m]
+    cost, s, dl, ins = d_last[m]
     return WERResult(wer=cost / n if n else 0.0, substitutions=s, deletions=dl,
                      insertions=ins, reference_words=n)

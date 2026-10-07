@@ -1,0 +1,144 @@
+# Long demo meeting. One line per turn: "Speaker: text".
+# {{Meant|spoken}} = the voice says "spoken", the reference transcript says "Meant".
+# Diana chairs the meeting and is never addressed by name, on purpose.
+Diana: Good morning everyone, let's get started. We have a packed agenda today, so I want to keep us moving. First, the payments incident from last Tuesday. Then a security review, the mobile release, our cloud costs, backups, and finally hiring and process. Before we begin, we have a guest from another team joining us today.
+Omar: Hi everyone, I'm Omar. I lead application security, and I've been asked to sit in because a couple of today's topics touch authentication and the release schedule. Thanks for having me.
+Diana: Welcome, glad you could make it. We'll get to the security items right after the incident review, so you won't have to wait long. Okay, the payments incident. I've read the summary in the channel, but I want the whole team to hear the timeline from the person who was on call. Ravi, can you walk us through what happened from the beginning?
+Ravi: Sure. So the first alert fired at nine forty two in the morning. Checkout requests started timing out, and within about five minutes the error rate on the payment service was above thirty percent. I acknowledged the page at nine forty five and started looking at the dashboards. The first thing I noticed was that the {{Kafka|cough ka}} consumer lag on the payments topic was climbing very fast. It went from basically zero to about two hundred thousand messages in under ten minutes.
+Hannah: Was that the consumers being slow, or was the producer suddenly sending a lot more traffic?
+Ravi: Both, actually, and that's what made it confusing. Traffic was higher than normal because of the marketing campaign that went out that morning, roughly three times our usual peak. But the consumers were also slower than they should have been, because each payment event triggers a call to the fraud check service, and that service was itself degraded. So we had more messages coming in and each one taking longer to process.
+Diana: And how long were we actually down? I've seen a few different numbers floating around.
+Ravi: The full outage, meaning checkout was failing for most users, lasted forty seven minutes. We had partial degradation for another twenty minutes after that while the backlog drained. In total about one thousand two hundred transactions failed outright, and those customers saw an error page.
+Leo: And the duplicate charges? I saw a few support tickets about people being charged twice.
+Ravi: Yes, that's the part I'm most worried about. When the consumers finally caught up, some of the retried messages were processed twice. The payment webhook from our provider retries if it doesn't get a response within ten seconds, and during the incident we were often slower than that. So the same payment confirmation arrived two or three times, and we didn't have any protection against processing it more than once. We found eighty six customers who were charged twice. Support has refunded all of them already.
+Grace: That's not great. Do we know why there was no deduplication? I thought we had something for that.
+Ravi: We had deduplication in the old monolith. When the payment service was split out last year, that logic didn't come along with it. Nobody noticed because under normal load the webhook never retries. It only showed up under exactly this kind of slowdown.
+Diana: Okay. So what's the fix? I want to separate the immediate fix from the longer term work.
+Ravi: The immediate fix is to add {{idempotency|idem potency}} keys to the payment webhook handler. Every event from the provider already carries a unique event identifier. We store that identifier when we first process the event, and if we see it again we return success without processing it a second time. It's a small change, maybe a couple of hundred lines including tests, but it completely removes the duplicate charge problem.
+Leo: Where would you store the keys? If it's in Redis with an expiry, we need to think about what happens if Redis evicts them under memory pressure, which is exactly the situation we were in during the incident.
+Ravi: Good point. I'd put them in PostgreSQL, in the same transaction that records the payment. That way the key and the payment are written together or not at all, and there's no eviction to worry about. The table will grow, but we can clean up keys older than thirty days with a nightly job.
+Hannah: Does the mobile app need to change at all for this?
+Ravi: No, this is entirely on the server side. The app never talks to the webhook.
+Diana: Alright. I don't think we need to debate this further. We're adding idempotency keys to the payment webhook, stored in PostgreSQL with the payment record. That's decided. Longer term, I'd like us to look at the fraud check dependency, but not today.
+Omar: Can I ask one thing from the security side? When you store the event identifiers, make sure you're validating the webhook signature before you store anything. Otherwise someone could replay old events or flood the table with fake identifiers.
+Ravi: Yes, we already validate the signature before anything else happens, and the key check would come after that. I'll write the idempotency patch myself, and I should have it in review by Wednesday.
+Omar: Perfect, that's all I wanted to confirm.
+Diana: Good. Ravi, can you also write up the full incident postmortem by Friday, so we can share it with the wider engineering group?
+Ravi: Yes, I'll have the postmortem in {{Confluence|con fluence}} by Friday. I'll include the timeline, the duplicate charge analysis, and the list of follow up items.
+Grace: One request for the postmortem: could we include what the on call experience was like? Ravi was alone for the first twenty minutes and I think that's worth discussing separately.
+Diana: Agreed, that's a fair point, and it connects to something we'll talk about at the end under process. Let's move on to the security review. Over to you, since you're our guest.
+Omar: Thanks. I have two things. The first is authentication for the new partner API. The current plan, as I understand it, is for the platform team to build our own token service, issuing and validating OAuth tokens ourselves. I want to push back on that fairly strongly. Token services look simple and they are not. Key rotation, revocation, clock skew, refresh token theft, there's a long list of things that go wrong, and every one of them becomes our problem forever.
+Leo: What's the alternative? We looked at buying something last year and the pricing was painful.
+Omar: The company already has an enterprise contract with {{Okta|oak ta}} for employee login. I checked with procurement yesterday, and adding customer facing machine to machine tokens to that contract is included up to fifty thousand monthly active clients. We're nowhere near that. So the marginal cost for us is effectively zero.
+Ravi: How much work is the integration compared to building our own? I'd guess our own service was going to be about six weeks.
+Omar: For the partner API, the integration is mostly configuration plus validating tokens in the gateway. I'd estimate one to two weeks, and most of that is testing.
+Grace: I'm convinced, honestly. I never liked the idea of us owning cryptography code.
+Diana: Does anyone want to argue for building our own? Now is the time.
+Leo: Not me. I only cared about the cost, and that's answered.
+Diana: Then let's make it official. We are not going to build our own token service. We'll use Okta for the partner API tokens instead. That's decided.
+Omar: Great. The second item is token lifetime and rotation. Right now the internal service tokens never expire, which is the finding I'm most worried about from the last audit. I'd like us to rotate OAuth tokens every ninety days at the very least, and ideally have the rotation automated so nobody has to remember to do it.
+Ravi: Ninety days is fine for us. The services already reload credentials on restart, and we restart more often than that anyway.
+Hannah: The mobile app doesn't use those internal tokens at all, right? Just checking it doesn't affect the release.
+Omar: Correct, these are only service to service tokens. The app uses user sessions, which are separate.
+Diana: Then that's decided too. We'll rotate OAuth tokens every ninety days, automated. Is there anything else from the security side?
+Omar: One last thing. We finished the penetration test on the new checkout flow last week. The report isn't final yet, but there is one medium severity finding in how the app handles expired sessions. I'll send the penetration test report by Thursday, with the details and a recommended fix.
+Diana: Thank you. That brings us neatly to the mobile release, because if there's a finding in checkout, I want to understand whether it blocks the release. Hannah, where does that leave the release?
+Hannah: So, the current plan was to ship version four point two on the twentieth. The build is on {{TestFlight|test flight}} and about two hundred internal testers have been using it for a week. The feedback has been good overall. The main new feature, saved payment methods, is working well, and the crash rate in {{Sentry|sent tree}} is at zero point eight percent, which is higher than I'd like but not alarming.
+Omar: The session finding is in exactly the saved payment methods flow, unfortunately. If a session expires while the user is on the payment screen, the app keeps showing the saved card details for a few seconds before it redirects to login. It's not a data leak to another user, but it's not the behaviour we want either.
+Hannah: That's fixable. It's a matter of checking the session state before rendering the screen rather than after. But it needs a new build, another round of testing, and then App Store review, which has been taking three to four days lately.
+Diana: So realistically, can we still make the twentieth?
+Hannah: Honestly, no, not safely. If the fix goes in this week, testing takes us to the middle of next week, and with review time we'd be cutting it very close. I'd rather not ship a payments feature in a rush right after a payments incident.
+Ravi: I agree with that. The last thing we need is a second payments problem in the same month.
+Diana: Okay. Let's move the release. We're delaying the mobile release to the twenty seventh. That gives us a week of buffer. Hannah, does the twenty seventh work for you and the team?
+Hannah: Yes, the twenty seventh works. I'll fix the session check myself, and I'll also fix the login crash this week, since that's the biggest single source of crashes in Sentry right now.
+Leo: Out of curiosity, what is the login crash?
+Hannah: It's an old one. On some older Android phones, if the user rotates the screen while the login request is in flight, the app tries to update a view that no longer exists. It's about forty percent of all our crashes, so fixing it should bring the crash rate down to something like zero point five percent.
+Grace: While we're talking about the app, I've been wondering whether we should rewrite the mobile app in Flutter. Right now we maintain two separate code bases, one for iOS and one for Android, and every feature costs us twice.
+Hannah: I've thought about it too, and it's tempting. But a rewrite is at least two quarters of work for the whole mobile team, and we'd be shipping almost nothing new during that time.
+Diana: Let's park that one. It's a real conversation, but not this quarter, and definitely not in the same month as a delayed release. If someone wants to write up the trade offs properly, we can revisit it at planning.
+Grace: That's fair. I just wanted it on the radar.
+Diana: It is now. Hannah, could you get the release notes ready by next Monday, so marketing has time to prepare the announcement?
+Hannah: Sure, I'll get those done. I'll make sure they mention the saved payment methods and the crash fixes.
+Diana: Thank you. Before we get to costs, I want to spend a few minutes on customer impact, because the incident wasn't only an engineering event. Our support team had a very long week, and I'd like everyone to understand what that looked like from their side.
+Grace: I spoke with the support lead on Monday. They received just over nine hundred tickets in the three days after the incident, compared with about two hundred and fifty in a normal three day period. Most were customers asking whether their payment went through, and the most stressful ones were the duplicate charges, because those customers were understandably angry.
+Ravi: Did support have what they needed to answer the duplicate charge questions? I remember they were asking us for transaction lists during the incident itself.
+Grace: That was the main complaint. For the first day, they had no way to check whether a specific customer had been charged twice, so every one of those tickets was escalated to engineering. Once Ravi shared the list of affected customers, they could answer directly, and the response time dropped from about six hours to under one hour.
+Hannah: Is there something we could build so that support can look up payment events themselves next time? On mobile we had a similar problem with subscription renewals last year.
+Ravi: There's an internal admin tool that shows payments for a customer, but it doesn't show the raw webhook events, which is what you'd need to spot a duplicate. Adding that view is not a lot of work, but it's not something I'd squeeze in before the idempotency fix.
+Diana: Agreed, the fix comes first. Let's capture the support tooling gap in the postmortem as a follow up rather than commit to it today. What about the public side? How did the status page work during the incident?
+Leo: Not well, honestly. The status page was updated twenty five minutes after the first alert, and only because someone in support asked whether we were going to say anything. By then customers had been seeing errors for a long time.
+Grace: Which connects to the on call problem again. Ravi was the only person who could have updated it, and he was busy actually fixing the problem.
+Diana: We'll come back to that under process, because I think the answer is the same for both. What about the numbers on the business side? Do we know what the incident cost us?
+Ravi: Finance gave me a rough estimate yesterday. The failed transactions during the outage were worth about thirty eight thousand dollars. Some of those customers came back and paid later the same day, so the real loss is probably closer to fifteen thousand. The refunds for the duplicate charges were about four thousand two hundred, but that money was never really ours anyway.
+Hannah: And we probably lost some trust, which doesn't show up in that number.
+Diana: Exactly. That's the part I care about most. Payments are the one place where customers have no patience for mistakes, and they're right not to. Okay, I think that's a fair picture. Let's move on to cloud costs, because finance has started asking questions there as well. Leo, how bad is the cloud bill this month?
+Leo: It's not good. Our total cloud spend last month was sixty one thousand dollars, up from about forty eight thousand three months ago. The biggest single jump is observability. Our {{Datadog|data dog}} bill alone is now fourteen thousand dollars a month, and it was around ten thousand at the start of the quarter.
+Ravi: What's driving the Datadog growth? We haven't added that many services.
+Leo: Logs, almost entirely. When I broke it down, debug level logs are about sixty percent of our total log volume. Most of them come from three services, and a lot of it is the payment service logging every single Kafka message it processes. Nobody reads those logs unless something has gone wrong, and when something goes wrong we usually need the last hour, not the last thirty days.
+Grace: Can't we just turn debug logging off in production?
+Leo: We could, but then during an incident like last week's, we'd have nothing to look at. Ravi actually used those debug logs to find the duplicate charges. So I don't want to throw them away. I want to stop paying premium prices to keep them hot.
+Diana: What are the options, concretely?
+Leo: The cleanest option is to keep debug logs in Datadog for only three days, and archive everything older than that to cold storage in our own cloud account. Cold storage is about two percent of the cost per gigabyte. If we ever need older logs, we can rehydrate a specific time window, which takes maybe an hour. I've tested it on one service and it works.
+Hannah: Would that affect the mobile crash logs? We sometimes look back a couple of weeks when a crash is rare.
+Leo: No, crash reports go to Sentry, not Datadog. This is only server side debug logs. Info and error level logs would stay exactly as they are.
+Ravi: Three days is enough for most incidents. Last week we only needed the previous two hours.
+Diana: Leo, what would the cold tier option save us per month, roughly?
+Leo: Roughly six thousand dollars a month, so close to half of the Datadog bill. The one time setup is small, a few hours of configuration.
+Diana: Then I don't see a reason to wait. We're moving debug logs older than three days to the cold storage tier. That's decided. Separately, I'll talk to finance about the Datadog contract myself, because I think our committed spend level is wrong, and they're the ones who negotiated it.
+Grace: Should we be worried about other things growing the same way without anyone noticing? This only came up because finance asked.
+Leo: That's exactly my concern. Right now we have no alerting on spend at all. We find out at the end of the month when the invoice arrives. I'll set up budget alerts in {{Terraform|terra form}}, so that each team gets a notification when its projected monthly spend goes more than twenty percent over its budget. Then the next surprise reaches us in days instead of weeks.
+Ravi: Will the alerts be per service or per team? Per service would be very noisy.
+Leo: Per team, with a breakdown by service in the alert itself, so you can see which service caused it without having twenty separate alerts.
+Hannah: That sounds useful. Can mobile be included, even though our costs are tiny compared to the backend?
+Leo: Sure, every team gets one, it's the same configuration either way.
+Diana: Good. What else is in the bill that we should know about?
+Leo: The other big item is the {{Kubernetes|cooper netties}} clusters. We run three staging clusters, and as far as I can tell only one of them is used regularly. The other two were created for projects that finished months ago, and they cost about four thousand dollars a month between them. The problem is that I'm not completely sure nobody depends on them. There might be some forgotten test environment or a demo somebody uses once a quarter.
+Grace: So we can't just delete them.
+Leo: Not without checking first. Someone needs to audit the unused staging clusters and confirm with each team that nothing important is running there before we shut them down.
+Ravi: I'd guess at least one of them still has the old load testing setup, but I'm not sure anyone uses it.
+Diana: Let's make sure that gets done properly rather than quickly. I don't want to delete something on a Friday and find out on Monday that a customer demo depended on it.
+Leo: Agreed. One more thought, and this is really just an idea, not a proposal. Maybe someday we could look into self hosting {{Grafana|graph ana}} for our dashboards instead of paying for the hosted version. It's not urgent and I haven't done any analysis, so please don't treat it as a plan.
+Diana: Noted as an idea. If the numbers ever look compelling, bring it back with an analysis. Okay, let's move on to backups, which is a short one but important.
+Grace: Is this about the restore test that was supposed to happen last quarter?
+Diana: Exactly that. We take nightly backups of the main PostgreSQL database, and we've never actually tested how long a full restore takes. If we lost the primary database tomorrow, I genuinely don't know whether we'd be back in one hour or one day. That's not acceptable for a payments company. Leo, can you check how long a full backup restore actually takes?
+Grace: Actually, I can take that one. Leo has more than enough on his plate with the cost work, and I've been meaning to learn the backup tooling properly anyway. I'll run a full restore test on Thursday, into an isolated environment, and I'll report how long each step takes.
+Leo: Thanks, I appreciate that. The runbook is a bit out of date, so ping me if any of the steps don't make sense. The backup bucket permissions changed in the summer.
+Ravi: If you're restoring into an isolated environment, make sure the restored database can't send any emails or webhooks. We had a scare once where a restored copy started emailing real customers.
+Grace: Good to know. I'll disable all outbound traffic from the restore environment before starting.
+Diana: Thank you, both. I'd like the restore time written down somewhere permanent once we have it, because the next question will be what our recovery time objective should be, and we can't answer that without a real number.
+Omar: From the security side, please make sure the restore environment is torn down afterwards. Restored copies of production data lying around are one of the most common findings in audits.
+Grace: Understood, I'll delete it the same day.
+Diana: Let's turn to hiring and process. Grace, how is the hiring pipeline looking for the backend roles?
+Grace: Better than last month. We have two open backend positions. Recruiting has passed us eleven candidates in total, and after the initial screens, five of them look strong enough for the technical interview. Two of those five have competing offers, so timing matters. If we wait three or four weeks, we'll probably lose them.
+Ravi: Who's doing the technical interviews? Last round, the same three people did all of them, and it took a lot of time out of the sprint.
+Grace: That's part of what I wanted to raise. I'd like to spread the interviews across more people this time, so nobody does more than two in a week. We have six people who've been trained on the interview format, and that's enough if we plan ahead.
+Diana: Agreed, let's spread the load. Grace, can you schedule the interviews for the two backend roles before the end of the month?
+Grace: Yes, I'll schedule them. I'll start with the two candidates who have competing offers, and I'll send everyone the rotation so you can see your slots in advance.
+Ravi: While we're on hiring, could we hire a contractor to help with the backlog in the meantime? Even three months of help would make a big difference, especially with the idempotency work and the postmortem follow ups landing on the backend team.
+Diana: No, I'm afraid not. We don't have budget for a contractor this quarter, and honestly, onboarding someone for three months would cost us almost as much time as it saves. Let's focus on the permanent hires and get them in as quickly as we can.
+Ravi: Understood. It was worth asking.
+Diana: It was. Now, process. Grace raised the on call experience earlier, and I want to come back to it. Ravi was on his own for the first twenty minutes of a serious payments outage. That's not a failure on his part, it's a failure of how we set up on call.
+Grace: Right. The way it works today, the primary on call engineer is the only person paged. There's an escalation policy in {{PagerDuty|pager duty}}, but it only escalates after thirty minutes without an acknowledgement. Ravi acknowledged quickly, so it never escalated, and he had nobody to think out loud with.
+Ravi: To be honest, the hardest part wasn't the technical problem. It was trying to debug, update the status page, and answer questions in the incident channel all at the same time.
+Hannah: On the mobile side we've been talking about the same thing. Our rotation is smaller, so it's even worse for us.
+Diana: Then let's fix it for everyone. From now on, every on call shift gets a named secondary engineer, who is paged automatically for any high severity incident, and whose job is communication, so the primary can focus on fixing the problem. That's decided, and it applies to both the backend and mobile rotations.
+Leo: Does the secondary need to be from the same team?
+Diana: Ideally, yes, but for the first month let's be flexible and see how it works in practice.
+Grace: There's a related problem. The on call handbook is still a Google doc, and half the team can't find it when they need it. During the incident, Ravi spent a few minutes just looking for the link to the payment provider's status page. I can move the on call handbook into Confluence, next to the runbooks, and clean up the out of date sections while I'm at it.
+Diana: Do that.
+Grace: Will do. I'll also add a short checklist at the top for the first ten minutes of an incident.
+Omar: If you're adding a checklist, could you include a line about when to involve security? For anything touching payments or customer data, we'd like to know early rather than read about it in the postmortem.
+Grace: Of course, I'll add that.
+Diana: Good. Before we finish, a quick look at the partner API, since it's affected by the Okta decision. Ravi, how does the switch to Okta change the partner API timeline?
+Ravi: It probably helps. The original plan had six weeks for our own token service, and Omar's estimate for the Okta integration is one to two weeks. So even if the integration takes longer than expected, we should still be ahead of the original schedule. The rest of the partner API, the endpoints themselves and the rate limiting, is unchanged.
+Omar: I'm happy to pair with whoever does the gateway configuration. It goes much faster when someone has done it before, and I've done it for two other teams.
+Leo: How are we doing rate limiting for partners? Per partner, or per token?
+Ravi: Per partner. Each partner gets a quota based on their contract tier, and the gateway enforces it. Partners can have several tokens, but they all count against the same quota, otherwise someone could just create more tokens to get around the limit.
+Hannah: Will partners be able to see their own usage? Our support team will get a lot of questions otherwise.
+Ravi: Not in the first version. It's on the list, but the first version only returns the remaining quota in the response headers. A proper usage dashboard comes later.
+Diana: That's fine for the first version, as long as support knows what to tell partners. I'd like to check in on the partner API properly next week, once the Okta integration has started and we know more.
+Leo: One more thing on the partner API: do we expect much traffic from it in the first month? It affects how I size the gateway.
+Ravi: The first two partners are small. Maybe a few hundred requests per minute at peak, which is nothing compared to checkout traffic. The current gateway can handle that without any changes.
+Diana: Good. I think that covers everything on the agenda. To summarise the big picture, it's been a rough couple of weeks, but we now have a concrete fix for the duplicate charges, a much simpler authentication plan, a safer release date, a plan to get the cloud bill under control, and some real improvements to how we handle on call. Thank you all, and thank you especially for joining us today, it was very helpful.
+Omar: Thanks for having me. I'll keep an eye out for the Okta questions.
+Diana: Same time next week, everyone. Thanks.

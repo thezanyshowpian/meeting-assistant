@@ -103,6 +103,17 @@ def summarize(segments: list[Segment], *, utterances=None,
             "evidence, and use null for any owner or deadline that was not stated.")
 
     warnings: list[str] = []
+    # Ollama does not fail on an over-long prompt: it silently drops the start.
+    # A record built from the last 40 minutes of a 90-minute meeting would look
+    # complete. Say so instead.
+    if client.backend == "ollama":
+        from ..llm import OLLAMA_NUM_CTX, estimate_tokens
+        need = estimate_tokens(text) + 3000          # + room for the JSON answer
+        if need > OLLAMA_NUM_CTX:
+            warnings.append(
+                f"Transcript is ~{need:,} tokens with the answer, over the local "
+                f"context of {OLLAMA_NUM_CTX:,}: the start of the meeting may be "
+                f"ignored. Raise OLLAMA_NUM_CTX in .env.")
     data = None
     try:
         data = client.chat_json(prompt, user)

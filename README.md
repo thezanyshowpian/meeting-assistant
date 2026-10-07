@@ -99,7 +99,9 @@ Upload a recording and press **Process recording**. The tabs show:
 
 - **Transcripts:** raw and refined, side by side.
 - **Meeting record:** summary, minutes, decisions, and action items. Each owner
-  shows *how* it is known.
+  shows *how* it is known, and each claim shows when it was said. A player
+  replays the recording at that exact moment, so you can check any claim
+  yourself.
 - **Speakers:** the speaker-labelled transcript, each inferred name with its
   evidence, and any speaker label the conversation contradicts.
 - **Corrections:** every edit, applied *and rejected*, with the reason.
@@ -195,6 +197,7 @@ python checks/check_groq.py                                     # API, if config
 
 python eval/evaluate.py                     # sample meeting, full measured evaluation
 python eval/evaluate.py --fixture heldout   # 4-speaker meeting never used for tuning
+python eval/evaluate.py --fixture long --out data/long_outputs   # ~30-min, 6-speaker meeting
 python eval/stage3_trials.py                # Stage 3 repeated trials per backend
 python eval/tune_diarization.py             # threshold sweep, DER per setting
 ```
@@ -210,8 +213,23 @@ Regenerate the test recordings (macOS only, uses `say`):
 
 ```bash
 python scripts/make_sample_meeting.py
-python scripts/make_sample_meeting.py --name heldout
+python scripts/make_sample_meeting.py --name heldout_meeting
+python scripts/long_meeting/build.py && python scripts/make_sample_meeting.py --name long_meeting
 ```
+
+The 30-minute meeting (`scripts/long_meeting/`) is the demo recording. Every
+behaviour is planted on purpose and recorded in its answer key:
+
+- a guest who introduces himself;
+- a chair who is never named;
+- a question to Leo that Grace answers;
+- deadlines stated only in a request;
+- a bare "Do that." approval;
+- parked, declined and tentative proposals;
+- eleven deliberately mispronounced technical terms.
+
+Its WAV (~58 MB) is not committed; the script, answer key and outputs are. For
+the demo, upload `data/long_meeting_glossary.json` in the sidebar.
 
 ---
 
@@ -268,7 +286,9 @@ Stage 1 runs faster than real time (RTF ≈ 0.45 on CPU).
   no crosstalk. Real meetings will have higher WER and DER. The architecture
   (verification, grounding, conservative naming) is what is designed to hold up.
 - **Long recordings.** Stage 3 sends the transcript in one call. `OLLAMA_NUM_CTX`
-  is 16,384 (~2 hours of speech); beyond that, chunking would be needed.
+  is 16,384 tokens, about 60 minutes of speech once the prompt and the
+  output are counted (an earlier version of this README said ~2 hours, which
+  was wrong). Beyond that, raise it or chunk the transcript.
 - **Acoustic re-verification** of Stage 2 edits is designed but not built. See
   `docs/DESIGN_DECISIONS.md` for the circularity pitfall in the naive version and
   the decoy-control design that fixes it.
@@ -297,14 +317,15 @@ app/
     └── orchestrator.py runs the stages in order, owns failure policy
 checks/                 behavioural test harnesses
 eval/                   WER, DER, ground-truth evaluation, trials, tuning
-scripts/                test-meeting generator, prompt export
+scripts/                test-meeting generator, 30-min demo meeting, prompt export
 data/                   two test meetings, scripts, ground truth, sample outputs
 docs/                   technical description, design decisions, models, pipeline, prompts
 ```
 
 **Docs:**
 
-- `docs/technical_description.md`: the required submission artifact.
+- `docs/technical_description.md`: the required submission artifact. Section 10
+  covers what we deliberately did not build, and why.
 - `docs/DESIGN_DECISIONS.md`: every significant decision, alternative, and
   mistake, with measurements.
 - `docs/PROMPTS.md`: every prompt sent to a model, generated from the code by

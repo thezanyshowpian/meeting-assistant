@@ -1,0 +1,23 @@
+{
+  "terms": [
+    "Kafka",
+    "Kubernetes",
+    "Redis",
+    "PostgreSQL",
+    "Postgres",
+    "OAuth",
+    "Okta",
+    "Grafana",
+    "Datadog",
+    "Terraform",
+    "Sentry",
+    "TestFlight",
+    "Flutter",
+    "webhook",
+    "idempotency",
+    "PagerDuty",
+    "Confluence",
+    "staging",
+    "rollback"
+  ]
+}

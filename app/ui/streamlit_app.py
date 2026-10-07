@@ -42,6 +42,10 @@ with st.sidebar:
         help='A list of your domain terms, e.g. ["Kubernetes", "PostgreSQL"]. '
              "Used to correct mis-heard jargon.",
     )
+    num_speakers = st.number_input(
+        "Number of speakers (optional)", min_value=0, max_value=20, value=0,
+        help="0 = detect automatically. Set it if you know, e.g. 4.",
+    )
     use_llm = st.checkbox(
         "Use the language model for refinement", value=True,
         help="Off = deterministic phonetic glossary matching only (no LLM).",
@@ -77,14 +81,23 @@ if audio_file and st.button("Process recording", type="primary"):
 
     try:
         result = run_pipeline(tmp_path, glossary=glossary,
-                              use_llm_refinement=use_llm, progress=progress)
+                              use_llm_refinement=use_llm,
+                              num_speakers=int(num_speakers) or None,
+                              progress=progress)
         status.update(label="Done", state="complete", expanded=False)
         st.session_state["result"] = result
+        # Kept so every claim can be played back at the moment it was said.
+        st.session_state["audio"] = (audio_file.getvalue(), audio_file.type or "audio/wav")
     except Exception as exc:                                       # noqa: BLE001
         status.update(label="Failed", state="error")
         st.error(f"Processing failed: {exc}")
     finally:
         os.unlink(tmp_path)
+
+def _clock(seconds: float) -> str:
+    m, s = divmod(int(seconds or 0), 60)
+    return f"{m}:{s:02d}"
+
 
 # ------------------------------------------------------------------ results
 result = st.session_state.get("result")
@@ -121,6 +134,9 @@ if result:
         if not record:
             st.info("No meeting record was produced.")
         else:
+            if record.model:
+                st.caption(f"Written by {record.model}; every item below was then "
+                           "checked against the transcript (Stage 4).")
             if record.summary:
                 st.subheader("Summary")
                 st.write(record.summary)
@@ -137,7 +153,8 @@ if result:
                 for d in record.decisions:
                     st.markdown(f"**{d.statement}**")
                     if d.evidence:
-                        st.caption(f'evidence: "{d.evidence}"')
+                        when = f" — at {_clock(d.timestamp)}" if d.timestamp is not None else ""
+                        st.caption(f'evidence: "{d.evidence}"{when}')
             else:
                 st.caption("No decisions were reached in this meeting.")
 
@@ -147,6 +164,7 @@ if result:
                     {"Task": a.task,
                      "Owner": a.owner_display,
                      "Deadline": a.deadline or UNSPECIFIED,
+                     "Said at": _clock(a.timestamp) if a.timestamp is not None else "—",
                      "How the owner is known": a.owner_evidence or "—"}
                     for a in record.action_items
                 ])
@@ -157,6 +175,20 @@ if result:
                            "conversation (see the Speakers tab).")
             else:
                 st.caption("No action items were assigned.")
+
+            # Every surviving claim is anchored to a timestamp by Stage 4, so the
+            # user can check it against the recording rather than trust it.
+            audio = st.session_state.get("audio")
+            moments = [(f"Decision — {d.statement[:70]}", d.timestamp) for d in record.decisions
+                       if d.timestamp is not None]
+            moments += [(f"Action — {a.task[:70]}", a.timestamp) for a in record.action_items
+                        if a.timestamp is not None]
+            if audio and moments:
+                st.subheader("Check it against the recording")
+                label = st.selectbox("Play the moment this was said",
+                                     [f"[{_clock(t)}] {name}" for name, t in moments])
+                start = dict((f"[{_clock(t)}] {name}", t) for name, t in moments)[label]
+                st.audio(audio[0], format=audio[1], start_time=max(0, int(start) - 2))
 
     # -- who spoke, and which names the conversation actually supports
     with tabs[2]:
@@ -189,6 +221,9 @@ if result:
         if not ref:
             st.info("Refinement did not run.")
         else:
+            if ref.model:
+                st.caption(f"Proposals from {ref.model} and the phonetic glossary "
+                           "matcher, filtered by 9 deterministic checks.")
             st.subheader(f"Applied ({len(ref.applied)})")
             if ref.applied:
                 st.table([{"Original": e.original, "Corrected": e.replacement,
